@@ -1,7 +1,12 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { Metafile } from "esbuild";
 import { describe, expect, it } from "vitest";
 import {
   retiredRpcInvalidatesWarnings,
   retiredSdkMemberWarnings,
+  retiredSdkMemberWarningsForInputs,
 } from "./retired-sdk-members.js";
 
 function retiredNames(source: string): string[] {
@@ -125,6 +130,34 @@ describe("retiredSdkMemberWarnings", () => {
     expect(retiredSdkMemberWarnings(source)).toEqual([
       expect.stringContaining("ctx.experimental_panel is renamed to ctx.panel"),
     ]);
+  });
+});
+
+describe("retiredSdkMemberWarningsForInputs", () => {
+  it("reads absolute inputs and skips namespaced inputs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bb-retired-sdk-inputs-"));
+    try {
+      const source = "sdk.environments.status({ environmentId });";
+      const absoluteInput = join(root, "server.ts").replaceAll("\\", "/");
+      const namespacedInput = "bb-runtime:x";
+      await writeFile(absoluteInput, source);
+      await writeFile(join(root, namespacedInput), source);
+      const input = { bytes: source.length, imports: [] };
+      const metafile: Metafile = {
+        inputs: { [absoluteInput]: input, [namespacedInput]: input },
+        outputs: {},
+      };
+
+      await expect(
+        retiredSdkMemberWarningsForInputs(metafile, root, root),
+      ).resolves.toEqual([
+        expect.stringContaining(
+          `${absoluteInput}: environments.status is retired`,
+        ),
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 

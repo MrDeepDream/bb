@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { Metafile } from "esbuild";
+import { isFileMetafileInput } from "./metafile-inputs.js";
 
 const GIT_READS_REPLACEMENT: Readonly<Record<string, string>> = {
   status:
@@ -150,7 +151,7 @@ export async function retiredSdkMemberWarningsForInputs(
 ): Promise<string[]> {
   const warnings: string[] = [];
   for (const input of Object.keys(metafile.inputs)) {
-    if (input.startsWith("(") || input.includes(":")) continue;
+    if (!isFileMetafileInput(input)) continue;
     if (input.includes("node_modules")) continue;
     const path = resolve(absWorkingDir, input);
     let source: string;

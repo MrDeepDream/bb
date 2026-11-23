@@ -1,3 +1,4 @@
+import { isFileMetafileInput } from "./metafile-inputs.js";
 import { retiredSdkMemberWarningsForInputs } from "./retired-sdk-members.js";
 import {
   mkdir,
@@ -359,7 +360,7 @@ export async function buildPluginServer(
       sourceRoot,
     );
     inputs = Object.keys(bundle.metafile.inputs)
-      .filter((input) => !input.startsWith("(") && !/^[\w-]{2,}:/u.test(input))
+      .filter(isFileMetafileInput)
       .map((input) => resolve(process.cwd(), input));
     await writeFile(
       stagedMetaPath,
