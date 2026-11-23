@@ -360,10 +360,14 @@ function RootComposeFilePreviewTabContent({
     path: tab.path,
     rootPath: projectPreviewRootPath,
   });
+  const hostFilePreviewHostId =
+    tab.kind === "host-file-preview"
+      ? (tab.hostId ?? environment?.hostId ?? null)
+      : null;
   const externalFileTarget: ExperimentalLiveFileTarget | null =
     tab.kind === "host-file-preview"
-      ? environment
-        ? { kind: "host", hostId: environment.hostId, path: tab.path }
+      ? hostFilePreviewHostId !== null
+        ? { kind: "host", hostId: hostFilePreviewHostId, path: tab.path }
         : null
       : tab.kind === "thread-storage-file-preview"
         ? storageThreadId
