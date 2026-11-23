@@ -1,7 +1,10 @@
 import type { BbDesktopServerChoice, BbDesktopServerList } from "./servers.js";
 import { z } from "zod";
 import type { BbDesktopBrowserApi } from "./browser.js";
-import type { BbDesktopWindowFindRequest } from "./find.js";
+import type {
+  BbDesktopPopupApplicationMenuRequest,
+  BbDesktopWindowFindRequest,
+} from "./find.js";
 import { bbDesktopVersionFeedPlatformSchema } from "./version-feed.js";
 import type { AppCommandId } from "@bb/domain";
 
@@ -101,6 +104,8 @@ export interface BbDesktopApi extends BbDesktopInfo {
     listener: BbDesktopCloseWindowRequestHandler,
   ): BbDesktopInfoUnsubscribe;
   openWindowFind?(request: BbDesktopWindowFindRequest): void;
+  popupApplicationMenu?(request: BbDesktopPopupApplicationMenuRequest): void;
+  onApplicationMenuRequested?(listener: () => void): BbDesktopInfoUnsubscribe;
   openDataDirectory?(): Promise<void>;
   openExternalUrl(url: string): void;
   openApplicationUrl?(url: string): Promise<void>;

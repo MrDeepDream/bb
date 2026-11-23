@@ -1,5 +1,6 @@
 import { useLayoutEffect, type ReactNode } from "react";
 import { act } from "@testing-library/react";
+import { useAtomValue } from "jotai";
 import { describe, expect, it, vi } from "vitest";
 import type {
   BbNavigate,
@@ -12,6 +13,7 @@ import type {
 } from "@get-bb/plugin-sdk";
 import type { TerminalSession } from "@bb/server-contract";
 import { createTerminalFixedPanelTab } from "@bb/client-core";
+import { bottomRegionOpenAtom } from "@/lib/app-shell-regions";
 import { sdk } from "@/lib/sdk";
 import { useBbNavigate } from "@/lib/plugin-navigation-hooks";
 import {
@@ -36,6 +38,7 @@ export interface PanelContractSnapshot {
   isOpen: boolean;
   activeTabId: string | null;
   tabIds: readonly string[];
+  isBottomRegionOpen: boolean;
 }
 
 interface ContractTab {
@@ -470,24 +473,32 @@ export function describePanelControllerContract(
     );
 
     it.runIf(supports.navigation)(
-      "opens a terminal, selects its tab and reveals the closed side panel",
+      "opens a terminal in the desktop bottom region without moving the closed side panel",
       async () => {
         const surface = await mount();
         const { navigate, open } = required(surface.navigation);
         const session = open.terminal;
         vi.spyOn(sdk.terminals, "get").mockResolvedValue(session);
         call(() => surface.panel().close());
-        expect(surface.snapshot().isOpen).toBe(false);
+        const before = surface.snapshot();
+        expect(before).toMatchObject({
+          isOpen: false,
+          isBottomRegionOpen: false,
+        });
         expect(
           await callAsync(() =>
             navigate().experimental_openTerminal({ terminalId: session.id }),
           ),
         ).toBe(true);
-        expect(surface.snapshot()).toMatchObject({
-          isOpen: true,
-          activeTabId: createTerminalFixedPanelTab({ terminalId: session.id })
-            .id,
+        const after = surface.snapshot();
+        expect(after).toMatchObject({
+          isOpen: false,
+          activeTabId: before.activeTabId,
+          isBottomRegionOpen: true,
         });
+        expect(after.tabIds).toContain(
+          createTerminalFixedPanelTab({ terminalId: session.id }).id,
+        );
       },
     );
 
@@ -580,13 +591,16 @@ export function ContractSecondaryPanel({
 
 export interface ContractStateSink {
   current: FixedPanelTabsState | null;
+  isBottomRegionOpen?: boolean;
 }
 
 function recordState(
   sink: ContractStateSink,
   state: FixedPanelTabsState,
+  isBottomRegionOpen: boolean,
 ): void {
   sink.current = state;
+  sink.isBottomRegionOpen = isBottomRegionOpen;
 }
 
 export function ContractStateProbe({
@@ -599,8 +613,9 @@ export function ContractStateProbe({
   syncThreadId: string | null;
 }) {
   const state = useFixedPanelTabsState(panelStateId, syncThreadId);
+  const isBottomRegionOpen = useAtomValue(bottomRegionOpenAtom);
   useLayoutEffect(() => {
-    recordState(sink, state);
+    recordState(sink, state, isBottomRegionOpen);
   });
   return null;
 }
@@ -614,6 +629,7 @@ export function snapshotFromState(
     isOpen: state.secondary.isOpen,
     activeTabId: state.secondary.isOpen ? state.secondary.activeTabId : null,
     tabIds: state.secondary.tabs.map((tab) => tab.id),
+    isBottomRegionOpen: sink.isBottomRegionOpen === true,
   };
 }
 

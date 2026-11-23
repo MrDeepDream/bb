@@ -159,6 +159,7 @@ function renderSurface(surface: SurfaceCase, isFocused = true) {
         acceptsSession: surface.acceptsSession,
         tabsCarryTarget: surface.tabsCarryTarget,
         reveal: () => undefined,
+        usesBottomRegion: false,
       }),
       state: useFixedPanelTabsState(PANEL_STATE_ID, null),
       updateState: useUpdateFixedPanelTabsState(PANEL_STATE_ID, null),

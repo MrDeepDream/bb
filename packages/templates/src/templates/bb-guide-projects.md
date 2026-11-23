@@ -48,6 +48,10 @@ Discovery:
 
   bb project branches <id> --host <id>   List branches for a machine source
   bb project paths <id>                   Search workspace paths
+  bb project directory <id> [path]        List one source folder: folders
+                                          first, dotfiles shown, links and
+                                          .git left out, capped with truncated
+                                          (--machine or --host only)
   bb project files <id>                   List workspace files
   bb project content <id> <path>          Read file content (binary is base64;
                                           --json reports contentEncoding)

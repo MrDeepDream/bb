@@ -2021,12 +2021,16 @@ current surface's terminal panel. A thread surface accepts only that thread's
 terminals, the New thread screen only its current terminal scope, and a
 plugin page any terminal. It resolves false for unknown or exited terminals
 and surfaces without a terminal panel, and closing the tab closes the
-terminal. Requested in #1132.
+terminal. On wide Windows, Linux, and web layouts it reveals the bottom
+terminal region and leaves the right panel's active tab and open state alone.
+On macOS and compact viewports it reveals the right panel or drawer. Requested
+in #1132.
 
 **Core callers.** This API calls `usePanelTerminals`'s `open`; core's Start
 terminal row, the `terminal.open` shortcut, and terminal tab selection use
 its `select` on every surface. `usePanelTerminals.test.tsx` runs one contract
 table against the thread view, New thread screen, and plugin page.
+`AppShellRegions.test.tsx` covers the bottom-region target.
 
 Docs: `frontend-hooks-and-ui.md`.
 

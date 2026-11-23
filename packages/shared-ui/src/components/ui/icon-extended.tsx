@@ -17,6 +17,7 @@ import ArrowUp02Icon from "@hugeicons/core-free-icons/ArrowUp02Icon";
 import ArrowUpDoubleIcon from "@hugeicons/core-free-icons/ArrowUpDoubleIcon";
 import ArrowUpDownIcon from "@hugeicons/core-free-icons/ArrowUpDownIcon";
 import ArrowUpRight01Icon from "@hugeicons/core-free-icons/ArrowUpRight01Icon";
+import AsteriskIcon from "@hugeicons/core-free-icons/AsteriskIcon";
 import AttachmentIcon from "@hugeicons/core-free-icons/AttachmentIcon";
 import BellDotIcon from "@hugeicons/core-free-icons/BellDotIcon";
 import Book02Icon from "@hugeicons/core-free-icons/Book02Icon";
@@ -25,6 +26,7 @@ import BrowserIcon from "@hugeicons/core-free-icons/BrowserIcon";
 import Calendar03Icon from "@hugeicons/core-free-icons/Calendar03Icon";
 import CalendarCheckOut02Icon from "@hugeicons/core-free-icons/CalendarCheckOut02Icon";
 import ChartColumnIcon from "@hugeicons/core-free-icons/ChartColumnIcon";
+import ChevronsDownUpIcon from "@hugeicons/core-free-icons/ChevronsDownUpIcon";
 import CircleArrowShrink01Icon from "@hugeicons/core-free-icons/CircleArrowShrink01Icon";
 import CleanIcon from "@hugeicons/core-free-icons/CleanIcon";
 import Clock01Icon from "@hugeicons/core-free-icons/Clock01Icon";
@@ -101,6 +103,7 @@ import SortingAZ02Icon from "@hugeicons/core-free-icons/SortingAZ02Icon";
 import SortingNineOneIcon from "@hugeicons/core-free-icons/SortingNineOneIcon";
 import SortingOneNineIcon from "@hugeicons/core-free-icons/SortingOneNineIcon";
 import SortingZA01Icon from "@hugeicons/core-free-icons/SortingZA01Icon";
+import SquareDashedBottomCodeIcon from "@hugeicons/core-free-icons/SquareDashedBottomCodeIcon";
 import SquareIcon from "@hugeicons/core-free-icons/SquareIcon";
 import SquareUnlock02Icon from "@hugeicons/core-free-icons/SquareUnlock02Icon";
 import StarIcon from "@hugeicons/core-free-icons/StarIcon";
@@ -247,6 +250,7 @@ export const EXTENDED_ICON_MAP: ExtendedIconMap = {
   ArrowTurnBackward: ArrowTurnBackwardIcon,
   ArrowTurnForward: ArrowTurnForwardIcon,
   ArrowUpRight: ArrowUpRight01Icon,
+  Asterisk: AsteriskIcon,
   Beaker: TestTube01Icon,
   BellDot: BellDotIcon,
   Browser: BrowserIcon,
@@ -256,6 +260,7 @@ export const EXTENDED_ICON_MAP: ExtendedIconMap = {
   ChartColumn: ChartColumnIcon,
   ChevronUp: ArrowUp01Icon,
   ChevronsDown: ArrowDownDoubleIcon,
+  ChevronsDownUp: ChevronsDownUpIcon,
   ChevronsUp: ArrowUpDoubleIcon,
   ChildThread: UserMultiple02Icon,
   CircleArrowShrink: CircleArrowShrink01Icon,
@@ -345,6 +350,7 @@ export const EXTENDED_ICON_MAP: ExtendedIconMap = {
   SortingNineOne: SortingNineOneIcon,
   Space: SpaceIcon,
   Square: SquareIcon,
+  SquareDashedBottomCode: SquareDashedBottomCodeIcon,
   SquareUnlock02: SquareUnlock02Icon,
   Star: StarIcon,
   TextWrap: TextWrapIcon,

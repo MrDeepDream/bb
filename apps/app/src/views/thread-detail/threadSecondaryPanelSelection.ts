@@ -20,19 +20,38 @@ type NullableSecondaryPanelSetter = (
 
 interface GetActiveFixedSecondaryTabArgs {
   fixedPanelTabsState: FixedPanelTabsState;
+  hidesTerminals: boolean;
 }
 
 export function getActiveFixedSecondaryTab({
   fixedPanelTabsState,
+  hidesTerminals,
 }: GetActiveFixedSecondaryTabArgs): ActiveFixedSecondaryTab {
-  const activeTabId = fixedPanelTabsState.secondary.activeTabId;
+  const { activeTabId, previousActiveTabId, tabs } =
+    fixedPanelTabsState.secondary;
   if (activeTabId === null) {
     return null;
   }
-  const activeTab =
-    fixedPanelTabsState.secondary.tabs.find((tab) => tab.id === activeTabId) ??
-    null;
-  return activeTab;
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
+  if (!hidesTerminals || activeTab?.kind !== "terminal") {
+    return activeTab;
+  }
+  return (
+    tabs.find(
+      (tab) => tab.id === previousActiveTabId && tab.kind !== "terminal",
+    ) ??
+    tabs.find((tab) => tab.kind !== "terminal") ??
+    null
+  );
+}
+
+export function isFixedSecondaryPanelOpen(
+  args: GetActiveFixedSecondaryTabArgs,
+): boolean {
+  return (
+    args.fixedPanelTabsState.secondary.isOpen &&
+    (!args.hidesTerminals || getActiveFixedSecondaryTab(args) !== null)
+  );
 }
 
 export function useSetThreadSecondaryPanelSelection(
@@ -63,6 +82,7 @@ export function useSetThreadSecondaryPanelSelection(
 export function useToggleThreadSecondaryPanelSelection(
   panelStateId: ThreadSecondaryPanelThreadId,
   syncThreadId: ThreadSecondaryPanelThreadId,
+  hidesTerminals: boolean,
 ): () => void {
   const closeFixedSecondaryPanel = useCloseFixedSecondaryPanel(
     panelStateId,
@@ -72,17 +92,38 @@ export function useToggleThreadSecondaryPanelSelection(
     panelStateId,
     syncThreadId,
   );
+  const setFixedSecondaryPanelTab = useSetFixedSecondaryPanelTab(
+    panelStateId,
+    syncThreadId,
+  );
   const fixedPanelTabsState = useFixedPanelTabsState(
     panelStateId,
     syncThreadId,
   );
-  const isSecondaryPanelOpen = fixedPanelTabsState.secondary.isOpen;
+  const isSecondaryPanelOpen = isFixedSecondaryPanelOpen({
+    fixedPanelTabsState,
+    hidesTerminals,
+  });
+  const hasVisibleActiveTab =
+    getActiveFixedSecondaryTab({ fixedPanelTabsState, hidesTerminals }) !==
+    null;
 
   return useCallback(() => {
     if (isSecondaryPanelOpen) {
       closeFixedSecondaryPanel();
       return;
     }
+    if (hidesTerminals && !hasVisibleActiveTab) {
+      setFixedSecondaryPanelTab("thread-info");
+      return;
+    }
     openFixedSecondaryPanel();
-  }, [closeFixedSecondaryPanel, isSecondaryPanelOpen, openFixedSecondaryPanel]);
+  }, [
+    closeFixedSecondaryPanel,
+    hasVisibleActiveTab,
+    hidesTerminals,
+    isSecondaryPanelOpen,
+    openFixedSecondaryPanel,
+    setFixedSecondaryPanelTab,
+  ]);
 }

@@ -53,6 +53,7 @@ import {
   checkHostPathsExist,
   listHostFiles,
   listHostPaths,
+  listHostProjectDirectory,
   readHostFile,
   readHostFileChunk,
 } from "./command-handlers/host-files.js";
@@ -618,6 +619,7 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
   "host.move_path": moveHostPath,
   "host.remove_path": removeHostPath,
   "host.browse_directory": browseHostDirectory,
+  "host.list_project_directory": listHostProjectDirectory,
   "host.paths_exist": checkHostPathsExist,
   "project.inspect": async (command, options) =>
     inspectProjectPath(

@@ -12,7 +12,8 @@ import {
   hostDaemonEventBatchResponseSchema,
   type HostDaemonEventEnvelope,
 } from "@bb/host-daemon-contract";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { runThreadLifecycleTransaction } from "../../src/services/threads/lifecycle/run.js";
 import { buildThreadTimelineWithProfile } from "../../src/services/threads/timeline.js";
 import {
   internalAuthHeaders,
@@ -591,6 +592,106 @@ describe("internal event append ownership", () => {
       });
       expect(listQueuedThreadMessages(harness.db, thread.id)).toEqual([]);
       expect(getThread(harness.db, thread.id)?.status).toBe("active");
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  it("names the project only on notifications for a completed turn", async () => {
+    const { environment, harness, project, session, thread } =
+      await setupEventRoute();
+    try {
+      seedThreadRuntimeState(harness.deps, {
+        environmentId: environment.id,
+        inputText: "work",
+        providerThreadId: "provider-project-id",
+        threadId: thread.id,
+      });
+      const notifyThread = vi.spyOn(harness.deps.hub, "notifyThread");
+
+      const started = await postEventBatch({
+        harness,
+        sessionId: session.id,
+        events: [
+          {
+            threadId: thread.id,
+            event: {
+              type: "turn/started",
+              threadId: thread.id,
+              providerThreadId: "provider-project-id",
+              scope: turnScope("turn-project-id"),
+            },
+          },
+        ],
+      });
+      const completed = await postEventBatch({
+        harness,
+        sessionId: session.id,
+        events: [
+          {
+            threadId: thread.id,
+            event: {
+              type: "turn/completed",
+              threadId: thread.id,
+              providerThreadId: "provider-project-id",
+              scope: turnScope("turn-project-id"),
+              status: "completed",
+            },
+          },
+        ],
+      });
+
+      expect(started.status).toBe(200);
+      expect(completed.status).toBe(200);
+      const metadataFor = (eventType: "turn/started" | "turn/completed") =>
+        notifyThread.mock.calls
+          .map(([, , metadata]) => metadata)
+          .find((metadata) => metadata?.eventTypes?.includes(eventType));
+      expect(metadataFor("turn/started")?.projectId).toBeUndefined();
+      expect(metadataFor("turn/completed")?.projectId).toBe(project.id);
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  it("names the project when the server interrupts a running turn", async () => {
+    const { environment, harness, project, session, thread } =
+      await setupEventRoute();
+    try {
+      seedThreadRuntimeState(harness.deps, {
+        environmentId: environment.id,
+        inputText: "work",
+        providerThreadId: "provider-interrupted",
+        threadId: thread.id,
+      });
+      const started = await postEventBatch({
+        harness,
+        sessionId: session.id,
+        events: [
+          {
+            threadId: thread.id,
+            event: {
+              type: "turn/started",
+              threadId: thread.id,
+              providerThreadId: "provider-interrupted",
+              scope: turnScope("turn-interrupted"),
+            },
+          },
+        ],
+      });
+      expect(started.status).toBe(200);
+      const notifyThread = vi.spyOn(harness.deps.hub, "notifyThread");
+
+      runThreadLifecycleTransaction(harness.deps, thread.id, {
+        type: "daemon.lost",
+        reason: "host-connection-lost",
+        resuming: false,
+      });
+
+      const interrupted = notifyThread.mock.calls
+        .map(([, , metadata]) => metadata)
+        .find((metadata) => metadata?.eventTypes?.includes("turn/completed"));
+      expect(interrupted?.projectId).toBe(project.id);
     } finally {
       await harness.cleanup();
     }

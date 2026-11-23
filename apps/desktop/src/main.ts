@@ -220,7 +220,9 @@ import {
 import {
   BB_DESKTOP_SERVER_CHOICES_CHANGED_CHANNEL,
   BB_DESKTOP_APP_COMMAND_CHANNEL,
+  BB_DESKTOP_APPLICATION_MENU_REQUESTED_CHANNEL,
   BB_DESKTOP_OPEN_WINDOW_FIND_CHANNEL,
+  BB_DESKTOP_POPUP_APPLICATION_MENU_CHANNEL,
   BB_DESKTOP_RELOAD_WINDOW_CHANNEL,
   BB_DESKTOP_SET_SPLIT_NAVIGATION_ENABLED_CHANNEL,
   BB_DESKTOP_CLOSE_WINDOW_REQUEST_CHANNEL,
@@ -239,6 +241,7 @@ import {
 } from "./desktop-browser-view.js";
 import { removeLegacyAutomationPartitions } from "./desktop-browser-legacy-partitions.js";
 import { resolveDesktopBrowserAppCommand } from "./desktop-browser-shortcuts.js";
+import { watchApplicationMenuAltTap } from "./desktop-application-menu-alt-tap.js";
 import { registerDesktopBrowserIpc } from "./desktop-browser-main-ipc.js";
 import { resolveDesktopExternalUrl } from "./desktop-external-url.js";
 import {
@@ -255,6 +258,7 @@ import { createDesktopBrowserBrokerClient } from "./desktop-browser-broker-clien
 import {
   bbDesktopBrowserTabRefSchema,
   bbDesktopZoomCommandSchema,
+  bbDesktopPopupApplicationMenuRequestSchema,
   bbDesktopWindowFindRequestSchema,
   type BbDesktopZoomCommand,
 } from "@bb/desktop-contract";
@@ -603,6 +607,19 @@ function registerApplicationRendererReloadShortcut(
       reloadApplicationWindow(browserWindow, shortcut === "force-reload");
     }
   });
+}
+
+function requestApplicationMenu(hostWebContentsId: number): void {
+  const browserWindow = BrowserWindow.getAllWindows().find(
+    (candidate) => candidate.webContents.id === hostWebContentsId,
+  );
+  if (browserWindow !== undefined) {
+    sendToApplicationRenderer(
+      browserWindow,
+      BB_DESKTOP_APPLICATION_MENU_REQUESTED_CHANNEL,
+      null,
+    );
+  }
 }
 
 function reloadApplicationWindow(
@@ -1149,6 +1166,9 @@ function registerApplicationWindow(browserWindow: DesktopBrowserWindow): void {
   }
   registerApplicationRendererReloadShortcut(
     (browserWindow as BrowserWindow).webContents,
+  );
+  watchApplicationMenuAltTap((browserWindow as BrowserWindow).webContents, () =>
+    requestApplicationMenu(webContentsId),
   );
   registerDesktopContextMenu({ webContents: browserWindow.webContents });
   browserWindow.on("enter-full-screen", () => {
@@ -3265,6 +3285,28 @@ async function runDesktopApp(): Promise<void> {
     }
     desktopFindViewManager?.open(browserWindow, parsed.data);
   });
+  ipcMain.on(
+    BB_DESKTOP_POPUP_APPLICATION_MENU_CHANNEL,
+    (event, payload: unknown) => {
+      if (
+        !applicationWindowWebContentsIds.has(event.sender.id) ||
+        event.senderFrame !== event.sender.mainFrame
+      ) {
+        return;
+      }
+      const parsed =
+        bbDesktopPopupApplicationMenuRequestSchema.safeParse(payload);
+      const browserWindow = resolveApplicationWindow(event.sender);
+      if (!parsed.success || browserWindow === null) {
+        return;
+      }
+      Menu.getApplicationMenu()?.popup({
+        window: browserWindow,
+        x: parsed.data.x,
+        y: parsed.data.y,
+      });
+    },
+  );
   ipcMain.on(BB_DESKTOP_RELOAD_WINDOW_CHANNEL, (event) => {
     if (
       !applicationWindowWebContentsIds.has(event.sender.id) ||
@@ -3311,6 +3353,11 @@ async function runDesktopApp(): Promise<void> {
         splitNavigationCommands:
           splitNavigationCommandsByWebContentsId.get(hostWebContentsId),
       });
+    },
+    watchPageInput(webContents, hostWebContentsId) {
+      watchApplicationMenuAltTap(webContents, () =>
+        requestApplicationMenu(hostWebContentsId),
+      );
     },
   });
   registerDesktopBrowserIpc(desktopBrowserViewManager);
@@ -3451,6 +3498,7 @@ async function runDesktopApp(): Promise<void> {
       platform: process.platform,
     }),
     isMac: process.platform === "darwin",
+    isWindows: process.platform === "win32",
     isLinuxFrameless: hasLinuxWindowArgument({
       argument: LINUX_FRAMELESS_WINDOW_ARGUMENT,
       argv: process.argv,

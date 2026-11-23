@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useSetAtom } from "jotai";
 import {
   closeSecondaryPanelTabInState,
   createNewTabFixedPanelTab,
@@ -16,6 +17,12 @@ import {
 import { usePendingTerminals } from "@/components/thread/terminal/pending-terminals";
 import { applyTerminalSessionUpsert } from "@/hooks/cache-owners/terminal-cache-owner";
 import {
+  bottomRegionOpenAtom,
+  bottomTerminalIdAtomFamily,
+  focusedBottomTerminalId,
+} from "@/lib/app-shell-regions";
+import {
+  addFixedRightTerminalTabInState,
   replaceFixedRightTerminalTabInState,
   restoreFixedRightTerminalTabInState,
   useRemoveFixedRightTerminalTab,
@@ -32,6 +39,7 @@ interface UsePanelTerminalsArgs {
   acceptsSession: (session: TerminalSession) => boolean;
   tabsCarryTarget: boolean;
   reveal: () => void;
+  usesBottomRegion: boolean;
   onCloseLastTab?: () => void;
 }
 
@@ -39,6 +47,7 @@ export interface PanelTerminals {
   autoFocusTerminalId: string | null;
   canStart: boolean;
   close: (terminalId: string) => void;
+  closeFocusedBottomTerminal: () => boolean;
   handleAutoFocusHandled: () => void;
   open: (session: TerminalSession) => boolean;
   retryStart: (terminalId: string) => void;
@@ -66,10 +75,15 @@ export function usePanelTerminals({
   acceptsSession,
   tabsCarryTarget,
   reveal,
+  usesBottomRegion,
   onCloseLastTab,
 }: UsePanelTerminalsArgs): PanelTerminals {
   const [autoFocusTerminalId, setAutoFocusTerminalId] = useState<string | null>(
     null,
+  );
+  const setBottomRegionOpen = useSetAtom(bottomRegionOpenAtom);
+  const setBottomTerminalId = useSetAtom(
+    bottomTerminalIdAtomFamily(panelStateId ?? ""),
   );
   const queryClient = useQueryClient();
   const pendingTerminals = usePendingTerminals();
@@ -90,10 +104,25 @@ export function usePanelTerminals({
   const select = useCallback(
     (terminalId: string, target?: TerminalCreateTarget) => {
       setAutoFocusTerminalId(terminalId);
+      if (usesBottomRegion) {
+        updatePanelState((state) =>
+          addFixedRightTerminalTabInState(state, terminalId, target),
+        );
+        setBottomTerminalId(terminalId);
+        setBottomRegionOpen(true);
+        return;
+      }
       setActiveTerminal(terminalId, target);
       reveal();
     },
-    [reveal, setActiveTerminal],
+    [
+      reveal,
+      setActiveTerminal,
+      setBottomRegionOpen,
+      setBottomTerminalId,
+      updatePanelState,
+      usesBottomRegion,
+    ],
   );
 
   const open = useCallback(
@@ -119,9 +148,11 @@ export function usePanelTerminals({
       rows: DEFAULT_TERMINAL_ROWS,
       target: createTarget,
     });
-    updatePanelState((state) =>
-      closeSecondaryPanelTabInState(state, createNewTabFixedPanelTab().id),
-    );
+    if (!usesBottomRegion) {
+      updatePanelState((state) =>
+        closeSecondaryPanelTabInState(state, createNewTabFixedPanelTab().id),
+      );
+    }
     select(terminalId, tabsCarryTarget ? createTarget : undefined);
   }, [
     createTarget,
@@ -129,6 +160,7 @@ export function usePanelTerminals({
     tabsCarryTarget,
     pendingTerminals,
     updatePanelState,
+    usesBottomRegion,
   ]);
 
   useAppCommandHandler("terminal.open", () => {
@@ -148,14 +180,32 @@ export function usePanelTerminals({
         if (removed === null) return;
         let reopensPanel = false;
         updatePanelState((state) => {
-          reopensPanel = state.secondary.tabs.length === 0;
-          return restoreFixedRightTerminalTabInState(state, removed);
+          reopensPanel = !usesBottomRegion && state.secondary.tabs.length === 0;
+          return restoreFixedRightTerminalTabInState(
+            state,
+            removed,
+            !usesBottomRegion,
+          );
         });
         if (reopensPanel) reveal();
       });
     },
-    [pendingTerminals, removeTerminalTab, reveal, updatePanelState],
+    [
+      pendingTerminals,
+      removeTerminalTab,
+      reveal,
+      updatePanelState,
+      usesBottomRegion,
+    ],
   );
+
+  const closeFocusedBottomTerminal = useCallback(() => {
+    if (!usesBottomRegion) return false;
+    const terminalId = focusedBottomTerminalId();
+    if (terminalId === null) return false;
+    close(terminalId);
+    return true;
+  }, [close, usesBottomRegion]);
 
   const retryStart = useCallback(
     (terminalId: string) => {
@@ -168,11 +218,19 @@ export function usePanelTerminals({
           terminalId,
           nextTerminalId,
           tabsCarryTarget ? failed.request.target : undefined,
+          !usesBottomRegion,
         ),
       );
+      if (usesBottomRegion) setBottomTerminalId(nextTerminalId);
       setAutoFocusTerminalId(nextTerminalId);
     },
-    [tabsCarryTarget, pendingTerminals, updatePanelState],
+    [
+      tabsCarryTarget,
+      pendingTerminals,
+      setBottomTerminalId,
+      updatePanelState,
+      usesBottomRegion,
+    ],
   );
 
   const handleAutoFocusHandled = useCallback(
@@ -184,6 +242,7 @@ export function usePanelTerminals({
     autoFocusTerminalId,
     canStart,
     close,
+    closeFocusedBottomTerminal,
     handleAutoFocusHandled,
     open,
     retryStart,

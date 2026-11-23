@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/sidebar.js";
 import { ThreadActionSurfaceVisibility } from "@/lib/thread-actions/thread-action-registry";
 import { PluginThreadList } from "./PluginThreadList";
+import { ProjectsRegion } from "./ProjectsRegion";
 import { useThreadListReplacement } from "./threadListProvider";
 import {
   PluginSidebarFooterDisclosure,
@@ -243,7 +244,7 @@ export function AppSidebar({
       customize={navigationCustomize}
       className={className}
     >
-      {placement === "rail" && !isFramed ? (
+      {placement === "rail" && !isFramed && isCompactViewport ? (
         <div
           aria-hidden="true"
           className={cn(
@@ -257,7 +258,7 @@ export function AppSidebar({
         <div
           className={cn(
             "flex min-h-0 flex-1 flex-col",
-            isFramed ? "pt-2.5" : "pt-1",
+            isFramed || !isCompactViewport ? "pt-2.5" : "pt-1",
           )}
         >
           <SidebarNavigationProviderMount resolved={navigation} />
@@ -358,6 +359,7 @@ export function AppSidebar({
           />
         </ThreadActionSurfaceVisibility>
       </SidebarContent>
+      {!isFramed && !isCompactViewport ? <ProjectsRegion /> : null}
       <div
         className={cn(
           "relative flex flex-col gap-2",

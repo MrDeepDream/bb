@@ -55,6 +55,7 @@ This index lists every command path that the core CLI registers, including alias
 - `bb project reorder`
 - `bb project branches`
 - `bb project paths`
+- `bb project directory`
 - `bb project commands`
 - `bb project files`
 - `bb project content`

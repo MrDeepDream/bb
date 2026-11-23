@@ -146,9 +146,23 @@ export function removeFixedRightTerminalTabInState(
   );
 }
 
+export function addFixedRightTerminalTabInState(
+  state: FixedPanelTabsState,
+  terminalId: string,
+  target?: TerminalCreateTarget,
+): FixedPanelTabsState {
+  return setSecondaryPanelTabsInState({
+    state,
+    tabs: upsertTerminalTab(state.secondary.tabs, terminalId, target),
+    activeTabId: state.secondary.activeTabId,
+    isOpen: state.secondary.isOpen,
+  });
+}
+
 export function restoreFixedRightTerminalTabInState(
   state: FixedPanelTabsState,
   removed: RemovedTerminalTab,
+  revealsPanel: boolean,
 ): FixedPanelTabsState {
   if (state.secondary.tabs.some((tab) => tab.id === removed.tab.id)) {
     return state;
@@ -158,8 +172,12 @@ export function restoreFixedRightTerminalTabInState(
   return setSecondaryPanelTabsInState({
     state,
     tabs,
-    activeTabId: state.secondary.activeTabId ?? removed.tab.id,
-    isOpen: state.secondary.isOpen || state.secondary.tabs.length === 0,
+    activeTabId: revealsPanel
+      ? (state.secondary.activeTabId ?? removed.tab.id)
+      : state.secondary.activeTabId,
+    isOpen:
+      state.secondary.isOpen ||
+      (revealsPanel && state.secondary.tabs.length === 0),
   });
 }
 
@@ -167,7 +185,8 @@ export function replaceFixedRightTerminalTabInState(
   state: FixedPanelTabsState,
   terminalId: string,
   nextTerminalId: string,
-  target?: TerminalCreateTarget,
+  target: TerminalCreateTarget | undefined,
+  revealsPanel: boolean,
 ): FixedPanelTabsState {
   const replacedTabId = createTerminalFixedPanelTab({ terminalId }).id;
   const nextTab = createTerminalFixedPanelTab({
@@ -182,8 +201,11 @@ export function replaceFixedRightTerminalTabInState(
   return setSecondaryPanelTabsInState({
     state,
     tabs,
-    activeTabId: nextTab.id,
-    isOpen: true,
+    activeTabId:
+      revealsPanel || state.secondary.activeTabId === replacedTabId
+        ? nextTab.id
+        : state.secondary.activeTabId,
+    isOpen: revealsPanel || state.secondary.isOpen,
   });
 }
 

@@ -11,13 +11,28 @@ const desktopHidden = {
   ownsWindowTopLeft: true,
   reserveMacosTrafficLights: false,
   sidebarKeepsCollapsedRail: false,
+  usesDesktopChrome: true,
 };
 
 describe("resolveWindowTopLeftReserveClassName", () => {
   it.each([
     {
-      name: "reserves the browser trigger slot when the sidebar slides fully away",
+      name: "keeps the trigger slot in macOS fullscreen when the sidebar slides fully away",
       input: desktopHidden,
+      expected: BROWSER_COLLAPSED_HEADER_RESERVE_CLASS,
+    },
+    {
+      name: "reserves nothing on wide web, Windows, and Linux, where the title bar hosts the trigger",
+      input: { ...desktopHidden, usesDesktopChrome: false },
+      expected: null,
+    },
+    {
+      name: "keeps the compact reserve on web, Windows, and Linux",
+      input: {
+        ...desktopHidden,
+        isCompactViewport: true,
+        usesDesktopChrome: false,
+      },
       expected: BROWSER_COLLAPSED_HEADER_RESERVE_CLASS,
     },
     {

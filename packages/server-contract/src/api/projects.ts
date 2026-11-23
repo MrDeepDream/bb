@@ -16,6 +16,7 @@ import {
   branchListQuerySchema,
   isCommaSeparatedIncludeQueryValue,
   pathListIncludeQueryValueSchema,
+  workspacePathEntryKindSchema,
 } from "./shared.js";
 
 const localProjectPathRequestSchema = z
@@ -185,6 +186,28 @@ export const projectPathsQuerySchema = z
   })
   .superRefine(rejectMultipleWorkspaceSelectors);
 export type ProjectPathsQuery = z.infer<typeof projectPathsQuerySchema>;
+
+export const projectDirectoryQuerySchema = z
+  .object({
+    hostId: z.string().min(1),
+    path: z.string().min(1).optional(),
+  })
+  .strict();
+export type ProjectDirectoryQuery = z.infer<typeof projectDirectoryQuerySchema>;
+
+export const projectDirectoryResponseSchema = z.object({
+  entries: z.array(
+    z.object({
+      kind: workspacePathEntryKindSchema,
+      name: z.string(),
+      path: z.string(),
+    }),
+  ),
+  truncated: z.boolean(),
+});
+export type ProjectDirectoryResponse = z.infer<
+  typeof projectDirectoryResponseSchema
+>;
 
 export const projectBranchesQuerySchema = branchListQuerySchema
   .extend({

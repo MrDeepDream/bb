@@ -67,6 +67,12 @@ interface ProjectDiscoveryCommandOptions {
   query?: string;
 }
 
+interface ProjectDirectoryCommandOptions {
+  host?: string;
+  json?: boolean;
+  machine?: string;
+}
+
 function addProjectWorkspaceRoutingOptions(command: Command): Command {
   return command
     .option("--machine <id-or-name>", "Project source machine")
@@ -450,6 +456,31 @@ export function registerProjectCommands(
         });
         printJsonResult(result);
       }),
+    );
+
+  project
+    .command("directory <id> [path]")
+    .description("List one folder of a project source")
+    .option("--machine <id-or-name>", "Project source machine")
+    .option("--host <id-or-name>", "Alias for --machine")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(
+        async (
+          id: string,
+          path: string | undefined,
+          opts: ProjectDirectoryCommandOptions,
+        ) => {
+          const serverUrl = getUrl();
+          const hostId = await resolveProjectSourceHostId(opts, serverUrl);
+          const result = await createCliBbSdk(serverUrl).projects.directory({
+            projectId: id,
+            hostId,
+            ...(path ? { path } : {}),
+          });
+          printJsonResult(result);
+        },
+      ),
     );
 
   addProjectWorkspaceRoutingOptions(project.command("commands <id>"))

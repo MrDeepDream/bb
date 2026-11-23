@@ -287,6 +287,9 @@ export function runThreadLifecycleInTransaction(
   }
   if (appended.size > 0) {
     deps.hub.notifyThread(threadId, ["events-appended"], {
+      ...(appended.has("turn/completed")
+        ? { projectId: written.thread.projectId }
+        : {}),
       timelineSequence: getLatestThreadSequence(deps.db, { threadId }),
       eventTypes: [...appended],
     });

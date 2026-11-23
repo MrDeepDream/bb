@@ -30,7 +30,15 @@ import {
   MemoryRouter,
   RouterProvider,
 } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 import { BbHttpError } from "@bb/sdk/browser";
 import { sdk } from "@/lib/sdk";
 import type {
@@ -1918,6 +1926,10 @@ describe("PluginNewThreadComposer seeding", () => {
   });
 
   it("closes visible plugin details before an underlying terminal", async () => {
+    vi.stubGlobal("bbDesktop", { platform: "macos" });
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
     const terminal = createTerminalFixedPanelTab({
       terminalId: "terminal-under-details",
     });

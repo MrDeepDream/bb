@@ -164,6 +164,8 @@ import {
   type ProjectBranchesResponse,
   type ProjectCommandsQuery,
   type ProjectDefaultExecutionOptionsQuery,
+  type ProjectDirectoryQuery,
+  type ProjectDirectoryResponse,
   type ProjectFilesQuery,
   type ProjectListQuery,
   type ProjectPathsQuery,
@@ -341,6 +343,7 @@ import {
   projectBranchesQuerySchema,
   projectCommandsQuerySchema,
   projectDefaultExecutionOptionsQuerySchema,
+  projectDirectoryQuerySchema,
   projectFilesQuerySchema,
   projectListQuerySchema,
   projectPathsQuerySchema,
@@ -598,6 +601,14 @@ export const publicApiRoutes = {
         projectPathsQuerySchema,
       ),
       response: jsonResponse<WorkspacePathListResponse>(),
+    }),
+    directory: defineRoute({
+      path: "/projects/:id/directory",
+      method: "get",
+      request: queryRequest<PathProjectId, ProjectDirectoryQuery>(
+        projectDirectoryQuerySchema,
+      ),
+      response: jsonResponse<ProjectDirectoryResponse>(),
     }),
     commands: defineRoute({
       path: "/projects/:id/commands",

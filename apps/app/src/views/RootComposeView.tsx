@@ -137,7 +137,7 @@ import {
   useThreadFileTabs,
   type FileSearchSelection,
 } from "@/components/secondary-panel/useThreadFileTabs";
-import { isSecondaryFileTab } from "@bb/client-core";
+import { createNewTabFixedPanelTab, isSecondaryFileTab } from "@bb/client-core";
 import {
   buildTerminalSyncedSecondaryFileTabs,
   syncTerminalTabsInFixedPanelState,
@@ -145,8 +145,17 @@ import {
 import { usePendingTerminalIds } from "@/components/thread/terminal/pending-terminals";
 import {
   getActiveFixedSecondaryTab,
+  isFixedSecondaryPanelOpen,
   useSetThreadSecondaryPanelSelection,
 } from "./thread-detail/threadSecondaryPanelSelection";
+import { useAtom, useAtomValue } from "jotai";
+import { BottomTerminalRegion } from "@/components/layout/AppShellRegions";
+import {
+  bottomRegionOpenAtom,
+  contentShellHasPanelRoomAtom,
+  homeNewTabDismissedAtom,
+  useUsesAppShellRegions,
+} from "@/lib/app-shell-regions";
 import {
   useThreadSecondaryPanelDrawerVisibility,
   useThreadSecondaryPanelVisibility,
@@ -188,6 +197,7 @@ type RootComposeSectionTarget =
 
 const THREAD_TAB_CONTEXT = { kind: "thread" } as const;
 const NO_FIXED_TABS: readonly SecondaryPanelFixedTab[] = [];
+const HOME_NEW_TAB = createNewTabFixedPanelTab();
 
 export function readRootComposeSectionTargetFromLocationState(
   state: unknown,
@@ -709,18 +719,40 @@ function RootComposeSurface({
     ROOT_COMPOSE_FIXED_PANEL_STATE_ID,
     null,
   );
-  const isPersistedSecondaryPanelOpen = fixedPanelTabsState.secondary.isOpen;
-  const activeFixedSecondaryTab = getActiveFixedSecondaryTab({
-    fixedPanelTabsState,
-  });
+  const usesAppShellRegions = useUsesAppShellRegions();
+  const hasPanelRoom = useAtomValue(contentShellHasPanelRoomAtom);
+  const isBottomRegionOpen = useAtomValue(bottomRegionOpenAtom);
+  const [isHomeNewTabDismissed, setHomeNewTabDismissed] = useAtom(
+    homeNewTabDismissedAtom,
+  );
+  const showsHomeNewTab =
+    usesAppShellRegions &&
+    hasPanelRoom === true &&
+    !isHomeNewTabDismissed &&
+    !fixedPanelTabsState.secondary.isOpen &&
+    fixedPanelTabsState.secondary.tabs.every((tab) => tab.kind === "terminal");
+  const isPersistedSecondaryPanelOpen =
+    showsHomeNewTab ||
+    isFixedSecondaryPanelOpen({
+      fixedPanelTabsState,
+      hidesTerminals: usesAppShellRegions,
+    });
+  const activeFixedSecondaryTab = showsHomeNewTab
+    ? HOME_NEW_TAB
+    : getActiveFixedSecondaryTab({
+        fixedPanelTabsState,
+        hidesTerminals: usesAppShellRegions,
+      });
   const activeFixedSecondaryTabId = activeFixedSecondaryTab?.id ?? null;
   const isCompactViewport = useIsCompactViewport();
+  const usesTransientPanelVisibility =
+    isCompactViewport || (usesAppShellRegions && hasPanelRoom === false);
   const secondaryPanelDrawerVisibility =
     useThreadSecondaryPanelDrawerVisibility({
-      isCompactViewport,
+      isCompactViewport: usesTransientPanelVisibility,
       threadId: ROOT_COMPOSE_FIXED_PANEL_STATE_ID,
     });
-  const isWorkspacePanelOpen = isCompactViewport
+  const isWorkspacePanelOpen = usesTransientPanelVisibility
     ? secondaryPanelDrawerVisibility.isDrawerVisible
     : isPersistedSecondaryPanelOpen;
   const isSecondaryPanelOpen = isWorkspacePanelOpen;
@@ -784,11 +816,15 @@ function RootComposeSurface({
       threadId: rootPanelThreadId ?? undefined,
     },
   );
+  const isTerminalListVisible =
+    isSecondaryPanelOpen ||
+    (usesAppShellRegions && isBottomRegionOpen && isFocusedPane);
   const environmentTerminalsListQuery = useEnvironmentTerminals(
     rootPanelEnvironmentId ?? "",
     {
       enabled:
-        isSecondaryPanelOpen && rootPanelTerminalTarget?.kind === "environment",
+        isTerminalListVisible &&
+        rootPanelTerminalTarget?.kind === "environment",
     },
   );
   const globalTerminalsListQuery = useTerminals(
@@ -803,7 +839,7 @@ function RootComposeSurface({
       : null,
     {
       enabled:
-        isSecondaryPanelOpen && rootPanelTerminalTarget?.kind === "host_path",
+        isTerminalListVisible && rootPanelTerminalTarget?.kind === "host_path",
     },
   );
   const loadedTerminalSessions = useMemo(
@@ -834,6 +870,11 @@ function RootComposeSurface({
   const rootPanelNewThreadPanelActions = usePluginSlotKind(
     "newThreadPanelActions",
   );
+  const closeRootPanelDrawer = secondaryPanelDrawerVisibility.closeDrawer;
+  const handleCloseLastFileTab = useCallback(() => {
+    setHomeNewTabDismissed(true);
+    closeRootPanelDrawer();
+  }, [closeRootPanelDrawer, setHomeNewTabDismissed]);
   const {
     browserTabs,
     activateTab,
@@ -851,7 +892,7 @@ function RootComposeSurface({
     syncThreadId: null,
     environmentId: rootPanelEnvironmentId,
     fileOwnerThreadId: rootPanelThreadId,
-    onCloseLastTab: secondaryPanelDrawerVisibility.closeDrawer,
+    onCloseLastTab: handleCloseLastFileTab,
     preserveWorkspaceTabsAcrossContexts: true,
     projectHostId: rootProjectHostId,
     projectId: surfaceProjectId,
@@ -879,8 +920,15 @@ function RootComposeSurface({
           }),
     [loadedTerminalSessions, orderedSecondaryFileTabs, pendingTerminalIds],
   );
+  const displayedSecondaryFileTabs = useMemo(
+    () =>
+      showsHomeNewTab
+        ? [...syncedOrderedSecondaryFileTabs, HOME_NEW_TAB]
+        : syncedOrderedSecondaryFileTabs,
+    [showsHomeNewTab, syncedOrderedSecondaryFileTabs],
+  );
   const presentPanelTab = usePanelTabPresenter({
-    tabs: syncedOrderedSecondaryFileTabs,
+    tabs: displayedSecondaryFileTabs,
     terminalsById,
     pluginActions: rootPanelNewThreadPanelActions,
   });
@@ -919,8 +967,9 @@ function RootComposeSurface({
   });
   const openLiveFilePreview = panelFiles.openFilePreview;
   const closeRootSecondaryPanel = useCallback(() => {
+    setHomeNewTabDismissed(true);
     setRootSecondaryPanel(null);
-  }, [setRootSecondaryPanel]);
+  }, [setHomeNewTabDismissed, setRootSecondaryPanel]);
   const toggleRootPersistedSecondaryPanel = useCallback(() => {
     if (isPersistedSecondaryPanelOpen) {
       closeRootSecondaryPanel();
@@ -935,7 +984,7 @@ function RootComposeSurface({
   } = useThreadSecondaryPanelVisibility({
     closePersistedPanel: closeRootSecondaryPanel,
     drawerVisibility: secondaryPanelDrawerVisibility,
-    isCompactViewport,
+    isCompactViewport: usesTransientPanelVisibility,
     isPersistedOpen: isPersistedSecondaryPanelOpen,
     openPersistedPanel: setRootSecondaryPanel,
     openPersistedStorageFile: panelFiles.openStorageFile,
@@ -1134,6 +1183,7 @@ function RootComposeSurface({
     acceptsSession: acceptsRootTerminal,
     tabsCarryTarget: false,
     reveal: openCompactDrawer,
+    usesBottomRegion: usesAppShellRegions,
     onCloseLastTab: secondaryPanelDrawerVisibility.closeDrawer,
   });
   const appNavigationCapabilities = useMemo(
@@ -1145,8 +1195,15 @@ function RootComposeSurface({
     [openLiveFilePreview, panel, terminals.open],
   );
   const handleCloseWindowRequest = useCallback(() => {
+    if (terminals.closeFocusedBottomTerminal()) {
+      return true;
+    }
     if (!isSecondaryPanelOpen) {
       return false;
+    }
+    if (showsHomeNewTab) {
+      setHomeNewTabDismissed(true);
+      return true;
     }
     if (
       activeFixedSecondaryTab !== null &&
@@ -1165,6 +1222,8 @@ function RootComposeSurface({
     panel,
     closeTab,
     isSecondaryPanelOpen,
+    setHomeNewTabDismissed,
+    showsHomeNewTab,
     terminals,
   ]);
   const handleOpenPanelLink = useCallback<MarkdownPreviewLinkHandler>(
@@ -1206,6 +1265,7 @@ function RootComposeSurface({
         autoFocusTerminalId={terminals.autoFocusTerminalId}
         tab={tab}
         terminalTarget={rootPanelTerminalTarget}
+        usesBottomRegion={usesAppShellRegions}
       />
     ),
     [
@@ -1235,33 +1295,38 @@ function RootComposeSurface({
       terminals.handleAutoFocusHandled,
       terminals.retryStart,
       terminals.start,
+      usesAppShellRegions,
     ],
   );
   const panelTabs = useMemo<readonly SecondaryPanelRenderableTab[]>(
     () =>
-      syncedOrderedSecondaryFileTabs.map(
-        (tab): SecondaryPanelRenderableTab => ({
-          ...presentPanelTab(tab),
-          tab,
-          renderContent: (pane: SecondaryPanelPaneRenderContext) =>
-            renderRootPanelTabContent(tab, pane),
-          onSelect:
-            tab.kind === "terminal"
-              ? () => terminals.select(tab.terminalId)
-              : () => handleActivateFileTab(tab.id),
-          onClose:
-            tab.kind === "terminal"
-              ? () => terminals.close(tab.terminalId)
+      displayedSecondaryFileTabs.map((tab): SecondaryPanelRenderableTab => ({
+        ...presentPanelTab(tab),
+        isHidden: usesAppShellRegions && tab.kind === "terminal",
+        tab,
+        renderContent: (pane: SecondaryPanelPaneRenderContext) =>
+          renderRootPanelTabContent(tab, pane),
+        onSelect:
+          tab.kind === "terminal"
+            ? () => terminals.select(tab.terminalId)
+            : () => handleActivateFileTab(tab.id),
+        onClose:
+          tab.kind === "terminal"
+            ? () => terminals.close(tab.terminalId)
+            : showsHomeNewTab && tab.id === HOME_NEW_TAB.id
+              ? () => setHomeNewTabDismissed(true)
               : () => closeTab(tab.id),
-        }),
-      ),
+      })),
     [
       closeTab,
+      displayedSecondaryFileTabs,
       handleActivateFileTab,
       presentPanelTab,
       renderRootPanelTabContent,
-      syncedOrderedSecondaryFileTabs,
+      setHomeNewTabDismissed,
+      showsHomeNewTab,
       terminals,
+      usesAppShellRegions,
     ],
   );
   const rootPanelMetadataContent = useMemo(
@@ -1288,6 +1353,7 @@ function RootComposeSurface({
   const pinnedPanelToggleBoxClassName =
     useRootComposePinnedPanelToggleBoxClassName();
   const showPinnedToggle =
+    !usesAppShellRegions &&
     (paneContext?.secondaryPanelHost ?? null) === null &&
     (!isSecondaryPanelOpen || isCompactViewport);
   const rootPanelToggle = showPinnedToggle ? (
@@ -1445,6 +1511,14 @@ function RootComposeSurface({
                 isOpen={isSecondaryPanelOpen}
                 tabs={panelTabs}
               />
+              {usesAppShellRegions ? (
+                <BottomTerminalRegion
+                  isFocused={isFocusedPane}
+                  panelStateId={ROOT_COMPOSE_FIXED_PANEL_STATE_ID}
+                  tabs={panelTabs}
+                  terminals={terminals}
+                />
+              ) : null}
               <RootComposeSecondaryContent
                 contentClassName={
                   ROOT_COMPOSE_SIDEBAR_ACTION_ALIGNED_TOP_PADDING_CLASS

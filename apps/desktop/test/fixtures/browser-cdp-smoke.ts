@@ -170,6 +170,7 @@ async function main() {
     focusHostWebContents: () => {},
     pagePreloadPath: null,
     resolveAppCommand: () => null,
+    watchPageInput: () => undefined,
   });
   const scopeA = {
     hostWebContentsId: window.webContents.id,

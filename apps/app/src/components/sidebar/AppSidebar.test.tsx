@@ -65,6 +65,10 @@ vi.mock("./SidebarUpdatesBadge", () => ({
   SidebarUpdatesBadge: () => null,
 }));
 
+vi.mock("./ProjectsRegion", () => ({
+  ProjectsRegion: () => null,
+}));
+
 function Harness() {
   const navigation = useResolvedSidebarNavigation();
   return (

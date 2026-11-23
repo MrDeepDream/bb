@@ -444,7 +444,7 @@ export function closeSecondaryPanelTabInState(
     const fallbackTab = tabs[0] ?? null;
     return setSecondaryPanelTabsInState({
       activeTabId: fallbackTab?.id ?? null,
-      isOpen: fallbackTab !== null,
+      isOpen: state.secondary.isOpen && fallbackTab !== null,
       state,
       tabs,
     });

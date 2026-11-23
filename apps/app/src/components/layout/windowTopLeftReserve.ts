@@ -9,14 +9,19 @@ export function resolveWindowTopLeftReserveClassName({
   ownsWindowTopLeft,
   reserveMacosTrafficLights,
   sidebarKeepsCollapsedRail,
+  usesDesktopChrome,
 }: {
   isCompactViewport: boolean;
   isSidebarShowing: boolean;
   ownsWindowTopLeft: boolean;
   reserveMacosTrafficLights: boolean;
   sidebarKeepsCollapsedRail: boolean;
+  usesDesktopChrome: boolean;
 }): string | null {
-  if (!ownsWindowTopLeft || (!isCompactViewport && isSidebarShowing)) {
+  if (
+    !ownsWindowTopLeft ||
+    (!isCompactViewport && (isSidebarShowing || !usesDesktopChrome))
+  ) {
     return null;
   }
   if (sidebarKeepsCollapsedRail) {

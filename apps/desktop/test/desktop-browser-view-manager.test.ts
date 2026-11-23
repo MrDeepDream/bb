@@ -54,6 +54,7 @@ function createDesktopBrowserViewManager(
     focusHostWebContents: () => undefined,
     pagePreloadPath: null,
     resolveAppCommand: () => null,
+    watchPageInput: () => undefined,
     ...args,
   });
 }

@@ -33,6 +33,7 @@ import {
   type BbDesktopAppCommandHandler,
   type BbDesktopBrowserApi,
   type BbDesktopBrowserFindResultHandler,
+  type BbDesktopPopupApplicationMenuRequest,
   type BbDesktopWindowFindRequest,
   type BbDesktopBrowserPageMessageHandler,
   type BbDesktopBrowserOpenTabHandler,
@@ -105,6 +106,8 @@ import {
   BB_DESKTOP_SIGN_IN_TO_CONNECT_CHANNEL,
   BB_DESKTOP_APP_COMMAND_CHANNEL,
   BB_DESKTOP_OPEN_WINDOW_FIND_CHANNEL,
+  BB_DESKTOP_POPUP_APPLICATION_MENU_CHANNEL,
+  BB_DESKTOP_APPLICATION_MENU_REQUESTED_CHANNEL,
   BB_DESKTOP_RELOAD_WINDOW_CHANNEL,
   BB_DESKTOP_SET_SPLIT_NAVIGATION_ENABLED_CHANNEL,
   BB_DESKTOP_CLOSE_WINDOW_REQUEST_CHANNEL,
@@ -239,6 +242,7 @@ const browserFindResultListeners = new Set<BbDesktopBrowserFindResultHandler>();
 const closeWindowRequestListeners =
   new Set<BbDesktopCloseWindowRequestHandler>();
 const openNewTabListeners = new Set<BbDesktopOpenNewTabHandler>();
+const applicationMenuRequestListeners = new Set<() => void>();
 const zoomListeners = new Set<BbDesktopZoomChangeHandler>();
 let lastZoomFactor = webFrame.getZoomFactor();
 
@@ -532,6 +536,16 @@ const bbDesktopApi: BbDesktopApi = {
       topOffset: Math.round(request.topOffset * webFrame.getZoomFactor()),
     } satisfies BbDesktopWindowFindRequest);
   },
+  popupApplicationMenu(request): void {
+    const zoomFactor = webFrame.getZoomFactor();
+    ipcRenderer.send(BB_DESKTOP_POPUP_APPLICATION_MENU_CHANNEL, {
+      x: Math.round(request.x * zoomFactor),
+      y: Math.round(request.y * zoomFactor),
+    } satisfies BbDesktopPopupApplicationMenuRequest);
+  },
+  onApplicationMenuRequested(listener): BbDesktopInfoUnsubscribe {
+    return addListener(applicationMenuRequestListeners, listener);
+  },
   async openDataDirectory(): Promise<void> {
     await ipcRenderer.invoke(BB_DESKTOP_OPEN_DATA_DIRECTORY_CHANNEL);
   },
@@ -581,6 +595,12 @@ ipcRenderer.on(
     applyDesktopWindowStatePayload(payload);
   },
 );
+
+ipcRenderer.on(BB_DESKTOP_APPLICATION_MENU_REQUESTED_CHANNEL, () => {
+  for (const listener of applicationMenuRequestListeners) {
+    listener();
+  }
+});
 
 ipcRenderer.on(BB_DESKTOP_OPEN_NEW_TAB_CHANNEL, () => {
   for (const listener of openNewTabListeners) {

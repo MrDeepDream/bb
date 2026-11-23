@@ -10,7 +10,7 @@ import {
 import { APP_OVERLAY_LAYER } from "./ui/app-overlay-layers";
 
 const COMPACT_TOAST_OFFSET: NonNullable<ToasterProps["offset"]> = {
-  top: "calc(env(safe-area-inset-top) + var(--bb-app-chrome-row-height) + 16px)",
+  top: "calc(env(safe-area-inset-top) + var(--bb-app-title-bar-height) + var(--bb-app-chrome-row-height) + 16px)",
 };
 const COMPACT_TOAST_SWIPE_DIRECTIONS: NonNullable<
   ToasterProps["swipeDirections"]

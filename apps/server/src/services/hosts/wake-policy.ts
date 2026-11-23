@@ -41,6 +41,7 @@ const hostCommandWakePolicy = {
   "host.move_path": "work",
   "host.remove_path": "work",
   "host.browse_directory": "work",
+  "host.list_project_directory": "never",
   "host.paths_exist": "work",
   "project.inspect": "work",
   "project.clone_default_path": "work",

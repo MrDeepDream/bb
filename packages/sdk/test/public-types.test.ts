@@ -339,6 +339,7 @@ type ExpectedProjectsKey =
   | "create"
   | "defaultExecutionOptions"
   | "delete"
+  | "directory"
   | "fileContent"
   | "files"
   | "get"

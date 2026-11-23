@@ -29,6 +29,7 @@
    */
   :root {
     --bb-app-chrome-row-height: 3rem;
+    --bb-app-title-bar-height: 0px;
     --bb-chrome-control-gap: 0.25rem;
     --bb-panel-chrome-padding: 1rem;
     --bb-shell-height: 100dvh;
@@ -39,6 +40,12 @@
     --bb-sidebar-rail-padding: var(--bb-frame-rail-padding);
     --bb-sidebar-control-size: var(--bb-frame-rail-control-size);
     --bb-sidebar-control-icon-size: 16px;
+  }
+
+  @media not all and (max-width: 767px) {
+    :root {
+      --bb-app-title-bar-height: 2.5rem;
+    }
   }
 
   @media (width < 48rem) and (pointer: coarse) {

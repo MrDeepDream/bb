@@ -112,6 +112,11 @@ import {
   shouldShowFaviconAttentionDot,
 } from "./faviconAttentionDot";
 import { AppLayoutSidebar } from "./AppLayoutSidebar";
+import {
+  AppBottomRegionHost,
+  AppTitleBar,
+  useContentShellPanelRoom,
+} from "./AppShellRegions";
 import { resolveRouteSidebar } from "./routeSidebar";
 import { NAV_RAIL_COLLAPSED_SIDEBAR_WIDTH } from "@/components/sidebar/navRailWidth";
 import { useSidebarNavigationPlacement } from "@/components/sidebar/sidebarNavigationProvider";
@@ -140,7 +145,10 @@ const SIDEBAR_WIDTH_KEY = "bb.sidebar.width";
 const SIDEBAR_OPEN_KEY = "bb.sidebar.open";
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 460;
-const SIDEBAR_DEFAULT_WIDTH = 320;
+const COLLAPSED_RAIL_WIDTH_ESTIMATE_PX = 49;
+const SIDEBAR_DEFAULT_WIDTH = shouldUseMacosDesktopChrome(getBbDesktopInfo())
+  ? 320
+  : 328;
 
 function clampSidebarWidth(value: number) {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, value));
@@ -163,7 +171,7 @@ const sidebarWidthStorage = createTabScopedStorage<number>(
   { persistInitialValue: true },
 );
 
-const sidebarWidthAtom = atomWithStorage<number>(
+export const sidebarWidthAtom = atomWithStorage<number>(
   SIDEBAR_WIDTH_KEY,
   SIDEBAR_DEFAULT_WIDTH,
   sidebarWidthStorage,
@@ -224,6 +232,9 @@ function SidebarStateBridge({
         hasRail ? NAV_RAIL_COLLAPSED_SIDEBAR_WIDTH : undefined
       }
       framed={usesDesktopChrome}
+      className={
+        usesDesktopChrome ? undefined : "pt-(--bb-app-title-bar-height)"
+      }
       data-testid="app-layout-root"
       data-app-shell=""
       open={open}
@@ -316,15 +327,14 @@ function SidebarTriggerOverlay({
       </div>
     );
   }
+  if (!isCompactViewport) {
+    return null;
+  }
   return (
     <div
       data-testid="app-sidebar-trigger-overlay"
       data-panel-shelf={panelShelfState}
-      style={{
-        zIndex: isCompactViewport
-          ? APP_OVERLAY_LAYER.compactSidebarTrigger
-          : APP_OVERLAY_LAYER.sidebarTrigger,
-      }}
+      style={{ zIndex: APP_OVERLAY_LAYER.compactSidebarTrigger }}
       className={cn(
         "fixed top-[env(safe-area-inset-top)] left-[env(safe-area-inset-left)]",
         COMPACT_SHELF_HIDDEN_FIXED_CHROME_CLASS,
@@ -480,6 +490,14 @@ function AppLayoutContent({ children }: AppLayoutProps) {
   useMobileVisualViewportHeight(
     contentShell,
     restoreIOSViewportOnKeyboardDismissal,
+  );
+  useContentShellPanelRoom(
+    contentShell,
+    () =>
+      window.innerWidth -
+      (store.get(sidebarOpenAtom)
+        ? store.get(sidebarWidthAtom)
+        : COLLAPSED_RAIL_WIDTH_ESTIMATE_PX),
   );
   const location = useLocation();
   useRedirectRetiredPluginPaths();
@@ -878,12 +896,14 @@ function AppLayoutContent({ children }: AppLayoutProps) {
                   <main className="flex min-h-0 flex-1 flex-col p-4 md:p-5">
                     {children}
                   </main>
+                  {isGlobalSettingsView ? null : <AppBottomRegionHost />}
                 </div>
               </SidebarInset>
               <SidebarTriggerOverlay
                 reserveMacosTrafficLights={reserveMacosTrafficLights}
                 usesDesktopChrome={usesDesktopChrome}
               />
+              <AppTitleBar showsTerminalToggle={!isGlobalSettingsView} />
             </SidebarStateBridge>
             <PluginAppOverlays />
             <ThreadRowMetadataCollectors />

@@ -124,6 +124,7 @@ export function applyAppFrameGeometry(
       MACOS_TRAFFIC_LIGHT_SIZE_PX / 2;
     const titleBarHeight = 2 * centerY;
     Object.assign(properties, {
+      "--bb-app-title-bar-height": "0px",
       "--bb-macos-traffic-light-center-y": `${centerY}px`,
       "--bb-window-title-bar-height": `${titleBarHeight}px`,
       "--bb-window-card-mask": getWindowCardMask(titleBarHeight, false),
@@ -148,10 +149,32 @@ export function readWindowFindTopOffset(): number {
     return DEFAULT_WINDOW_FIND_TOP_OFFSET;
   }
   const rootStyle = window.getComputedStyle(document.documentElement);
-  return resolveWindowFindTopOffset(
-    rootStyle.getPropertyValue("--bb-app-chrome-row-height"),
-    rootStyle.fontSize,
+  return (
+    resolveWindowFindTopOffset(
+      rootStyle.getPropertyValue("--bb-app-chrome-row-height"),
+      rootStyle.fontSize,
+    ) +
+    resolveAppTitleBarHeight(
+      rootStyle.getPropertyValue("--bb-app-title-bar-height"),
+      rootStyle.fontSize,
+    )
   );
+}
+
+export function resolveAppTitleBarHeight(
+  titleBarHeight: string,
+  rootFontSize: string,
+): number {
+  const declared = titleBarHeight.trim();
+  const value = Number.parseFloat(declared);
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  if (declared.endsWith("rem")) {
+    const fontSize = Number.parseFloat(rootFontSize);
+    return Math.round(value * (Number.isFinite(fontSize) ? fontSize : 16));
+  }
+  return declared.endsWith("px") ? Math.round(value) : 0;
 }
 
 export function resolveWindowFindTopOffset(

@@ -10,6 +10,8 @@ import type {
   ProjectBranchesResponse,
   ProjectBranchesQuery,
   ProjectCommandsQuery,
+  ProjectDirectoryQuery,
+  ProjectDirectoryResponse,
   ProjectFilesQuery,
   ProjectResponse,
   ProjectWithThreadsResponse,
@@ -75,6 +77,11 @@ export type ProjectPathsArgs = ProjectWorkspaceRoutingArgs &
     projectId: string;
     signal?: AbortSignal;
   };
+
+export interface ProjectDirectoryArgs extends ProjectDirectoryQuery {
+  projectId: string;
+  signal?: AbortSignal;
+}
 
 export type ProjectCommandsArgs = ProjectWorkspaceRoutingArgs &
   Omit<ProjectCommandsQuery, "environmentId" | "hostId"> & {
@@ -166,6 +173,7 @@ export type ProjectCommandsResult = CommandListResponse;
 export type ProjectCreateResult = ProjectResponse;
 export type ProjectDefaultExecutionOptionsResult = ProjectExecutionDefaults | null;
 export type ProjectDeleteResult = OperationResponse;
+export type ProjectDirectoryResult = ProjectDirectoryResponse;
 export interface ProjectFileContentResult {
   content: string;
   contentEncoding: "utf8" | "base64";
@@ -222,6 +230,7 @@ export interface ProjectsArea {
     args: ProjectDefaultExecutionOptionsArgs,
   ): Promise<ProjectDefaultExecutionOptionsResult>;
   delete(args: ProjectDeleteArgs): Promise<ProjectDeleteResult>;
+  directory(args: ProjectDirectoryArgs): Promise<ProjectDirectoryResult>;
   fileContent(args: ProjectFileContentArgs): Promise<ProjectFileContentResult>;
   files(args: ProjectFilesArgs): Promise<ProjectFilesResult>;
   get(args: ProjectGetArgs): Promise<ProjectGetResult>;
@@ -494,6 +503,18 @@ export function createProjectsArea(args: CreateSdkAreaArgs): ProjectsArea {
             query: {},
           },
           ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async directory(input) {
+      const { projectId, signal, ...query } = input;
+      return transport.readJson(
+        transport.api.v1.projects[":id"].directory.$get(
+          {
+            param: { id: projectId },
+            query,
+          },
+          ...signalRequestArgs(signal),
         ),
       );
     },

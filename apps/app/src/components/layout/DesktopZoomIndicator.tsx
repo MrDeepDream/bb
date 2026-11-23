@@ -53,7 +53,7 @@ export function DesktopZoomIndicator() {
 
   return (
     <div
-      className={`fixed right-0 top-(--bb-app-chrome-row-height) ${MACOS_APP_REGION_NO_DRAG_CLASS}`}
+      className={`fixed right-0 top-[calc(var(--bb-app-title-bar-height)+var(--bb-app-chrome-row-height))] ${MACOS_APP_REGION_NO_DRAG_CLASS}`}
       style={{ zIndex: APP_OVERLAY_LAYER.sharedPortaledOverlay }}
     >
       <div

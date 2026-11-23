@@ -11,6 +11,7 @@ import {
   hostPathExistenceQueryKey,
   hostsQueryKey,
   hostProviderCliStatusQueryKey,
+  projectDirectoryQueryKey,
   projectPathsQueryKey,
   projectCommandsQueryKey,
   projectFilePreviewQueryKey,
@@ -871,6 +872,55 @@ describe("createRealtimeCacheEffects", () => {
     expect(queryClient.getQueryState(threadSearchKey)?.isInvalidated).toBe(
       true,
     );
+
+    effects.dispose();
+  });
+
+  it("refreshes only the completed turn's project directories", () => {
+    vi.useFakeTimers();
+    const { effects, queryClient } = createRealtimeEffectsTestContext();
+    const projectRootKey = projectDirectoryQueryKey("project-1", "host-1", "");
+    const projectNestedKey = projectDirectoryQueryKey(
+      "project-1",
+      "host-1",
+      "src",
+    );
+    const otherProjectKey = projectDirectoryQueryKey("project-2", "host-1", "");
+    for (const queryKey of [
+      projectRootKey,
+      projectNestedKey,
+      otherProjectKey,
+    ]) {
+      queryClient.setQueryData(queryKey, { entries: [], truncated: false });
+    }
+    const isInvalidated = (queryKey: readonly unknown[]) =>
+      queryClient.getQueryState(queryKey)?.isInvalidated;
+
+    effects.handleChanged({
+      type: "changed",
+      entity: "thread",
+      id: "thr_1",
+      metadata: { eventTypes: ["item/completed"], projectId: "project-1" },
+      changes: ["events-appended"],
+    });
+    vi.advanceTimersByTime(50);
+
+    expect(isInvalidated(projectRootKey)).toBe(false);
+    expect(isInvalidated(projectNestedKey)).toBe(false);
+    expect(isInvalidated(otherProjectKey)).toBe(false);
+
+    effects.handleChanged({
+      type: "changed",
+      entity: "thread",
+      id: "thr_1",
+      metadata: { eventTypes: ["turn/completed"], projectId: "project-1" },
+      changes: ["events-appended"],
+    });
+    vi.advanceTimersByTime(50);
+
+    expect(isInvalidated(projectRootKey)).toBe(true);
+    expect(isInvalidated(projectNestedKey)).toBe(true);
+    expect(isInvalidated(otherProjectKey)).toBe(false);
 
     effects.dispose();
   });

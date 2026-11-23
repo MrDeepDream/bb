@@ -93,6 +93,8 @@ import {
   parseBranchListLimit,
 } from "./branch-list-query.js";
 import { parseFileListLimit } from "./file-list-query.js";
+import { parseRelativeFileSegments } from "./files.js";
+import { remapDaemonFileRouteError } from "../services/hosts/daemon-file-response.js";
 import { resolveSkillCatalog } from "../services/skills/skill-catalog.js";
 import {
   readWorkspaceAgentContext,
@@ -109,6 +111,8 @@ import {
   resolveProjectCommandWorkspace,
   resolveProjectWorkspaceTarget,
 } from "../services/projects/project-workspace.js";
+
+const PROJECT_DIRECTORY_ENTRY_LIMIT = 2_000;
 
 type ProjectResponseProjectFields = Omit<ProjectResponse, "sources">;
 
@@ -732,6 +736,32 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
       },
     });
     return context.json({ paths: result.paths, truncated: result.truncated });
+  });
+
+  get(routes.directory, async (context, query) => {
+    const projectId = context.req.param("id");
+    requirePublicProject(deps.db, projectId);
+    const segments =
+      query.path === undefined ? [] : parseRelativeFileSegments(query.path);
+    const target = resolveProjectWorkspaceTarget(deps, {
+      projectId,
+      hostId: query.hostId,
+    });
+    const result = await callHostRetryableOnlineRpc(deps, {
+      hostId: target.hostId,
+      signal: context.req.raw.signal,
+      timeoutMs: COMMAND_TIMEOUT_MS,
+      command: {
+        type: "host.list_project_directory",
+        rootPath: target.path,
+        relativePath: segments.join("/"),
+        limit: PROJECT_DIRECTORY_ENTRY_LIMIT,
+      },
+    }).catch(remapDaemonFileRouteError);
+    return context.json({
+      entries: result.entries,
+      truncated: result.truncated,
+    });
   });
 
   get(routes.commands, async (context, query) => {

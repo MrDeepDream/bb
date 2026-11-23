@@ -74,6 +74,7 @@ import {
   allHostProviderCliStatusQueryKeyPrefix,
   hostProviderCliInstallJobsQueryKey,
   hostProviderCliStatusQueryKey,
+  projectDirectoryQueryKeyPrefix,
 } from "../queries/query-keys";
 import { systemEnvironmentProvidersQueryKey } from "../queries/environment-provider-queries";
 import { schedulePluginFrontendReconcile } from "../../lib/plugin-frontend-lazy";
@@ -363,6 +364,7 @@ export const REALTIME_THREAD_CHANGE_REGISTRY = {
       dirtyThreadListQueriesForBackgroundActivity,
       dirtyThreadDetailQueriesForBackgroundActivity,
       dirtyThreadSearchQueriesForCompletedTurn,
+      dirtyProjectDirectoryQueriesForCompletedTurn,
       dirtyThreadTimelineQueriesForAppendedEvents,
       dirtyThreadTurnRequestQueries,
     ],
@@ -837,6 +839,24 @@ function dirtyThreadSearchQueriesForCompletedTurn({
   invalidateQueryKeysWithoutCancelingActiveFetches({
     queryClient,
     queryKeys: [threadSearchQueryKeyPrefix()],
+  });
+}
+
+function dirtyProjectDirectoryQueriesForCompletedTurn({
+  eventTypes,
+  flushOnce,
+  projectId,
+  queryClient,
+}: ThreadRealtimeDirtyContext): void {
+  if (projectId === undefined || !eventTypes?.includes("turn/completed")) {
+    return;
+  }
+  if (!flushOnce(`project-directory:turn-completed:${projectId}`)) {
+    return;
+  }
+  invalidateQueryKeysWithoutCancelingActiveFetches({
+    queryClient,
+    queryKeys: [projectDirectoryQueryKeyPrefix(projectId)],
   });
 }
 

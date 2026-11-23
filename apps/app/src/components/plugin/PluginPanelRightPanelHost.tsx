@@ -7,9 +7,20 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { atom, useAtom } from "jotai";
+import { atom, useAtom, useAtomValue } from "jotai";
 import { atomFamily } from "jotai-family";
 import type { Host } from "@bb/domain";
+import { BottomTerminalRegion } from "@/components/layout/AppShellRegions";
+import {
+  bottomRegionOpenAtom,
+  bottomTerminalIdAtomFamily,
+  resolveBottomTerminalTab,
+  useUsesAppShellRegions,
+} from "@/lib/app-shell-regions";
+import {
+  getActiveFixedSecondaryTab,
+  isFixedSecondaryPanelOpen,
+} from "@/views/thread-detail/threadSecondaryPanelSelection";
 import { PluginTabScope, usePluginTabs } from "./PluginTabs";
 import type { PluginNavTabSlot } from "@/lib/plugin-slots";
 import {
@@ -285,24 +296,37 @@ export function PluginPanelRightPanelHost({
     setCompactDrawerOpen(false);
   }, [setCompactDrawerOpen]);
   const isCompactViewport = useIsCompactViewport();
+  const usesBottomRegion = useUsesAppShellRegions();
+  const isBottomRegionOpen = useAtomValue(bottomRegionOpenAtom);
+  const bottomTerminalId = useAtomValue(
+    bottomTerminalIdAtomFamily(panelStateId),
+  );
   const isOpen = isCompactViewport
     ? isCompactDrawerOpen
-    : panelState.secondary.isOpen;
-  const activeTab =
-    panelState.secondary.tabs.find(
-      (tab) => tab.id === panelState.secondary.activeTabId,
-    ) ?? null;
+    : isFixedSecondaryPanelOpen({
+        fixedPanelTabsState: panelState,
+        hidesTerminals: usesBottomRegion,
+      });
+  const activeTab = getActiveFixedSecondaryTab({
+    fixedPanelTabsState: panelState,
+    hidesTerminals: usesBottomRegion,
+  });
   const isPluginDetailActive = activeTab?.kind === "plugin-detail";
-  const activeTerminalTab: TerminalFixedPanelTab | null =
-    activeTab?.kind === "terminal" && activeTab.target !== undefined
+  const queriedTerminalTab = usesBottomRegion
+    ? resolveBottomTerminalTab(panelState.secondary.tabs, bottomTerminalId)
+    : activeTab?.kind === "terminal"
       ? activeTab
       : null;
+  const activeTerminalTab: TerminalFixedPanelTab | null =
+    queriedTerminalTab?.target !== undefined ? queriedTerminalTab : null;
   const activeTerminalTarget = activeTerminalTab?.target ?? null;
   const activeTerminalQuery = useTerminals(
     activeTerminalTarget === null
       ? null
       : terminalQueryScopeForTarget(activeTerminalTarget),
-    { enabled: isOpen },
+    {
+      enabled: isOpen || (usesBottomRegion && isBottomRegionOpen && isFocused),
+    },
   );
   const terminalSessions = activeTerminalQuery.data?.sessions;
   const terminalsById = useMemo(
@@ -535,6 +559,7 @@ export function PluginPanelRightPanelHost({
     acceptsSession,
     tabsCarryTarget: true,
     reveal: revealPanel,
+    usesBottomRegion,
     onCloseLastTab: closeCompactDrawer,
   });
   const navigationCapabilities = useMemo(
@@ -669,8 +694,10 @@ export function PluginPanelRightPanelHost({
           return (
             <LazyThreadTerminalPanel
               autoFocus={tab.terminalId === terminals.autoFocusTerminalId}
-              isPanelOpen={isOpen}
-              isPanelPersistedOpen={panelState.secondary.isOpen}
+              isPanelOpen={usesBottomRegion || isOpen}
+              isPanelPersistedOpen={
+                usesBottomRegion || panelState.secondary.isOpen
+              }
               onAutoFocusHandled={terminals.handleAutoFocusHandled}
               onCloseStart={() => terminals.close(tab.terminalId)}
               onOpenLink={handleOpenPanelLink}
@@ -763,6 +790,7 @@ export function PluginPanelRightPanelHost({
       selectedTerminalHost,
       terminalHosts,
       terminals,
+      usesBottomRegion,
     ],
   );
   const presentPanelTab = usePanelTabPresenter({
@@ -782,6 +810,7 @@ export function PluginPanelRightPanelHost({
               presentation.contentFillsRegion ||
               tab.kind === "terminal" ||
               tab.kind === "plugin-panel",
+            isHidden: usesBottomRegion && tab.kind === "terminal",
             tab,
             renderContent: () => renderPanelTabContent(tab),
             onSelect:
@@ -806,6 +835,7 @@ export function PluginPanelRightPanelHost({
       renderPanelTabContent,
       revealPanel,
       terminals,
+      usesBottomRegion,
     ],
   );
 
@@ -988,6 +1018,14 @@ export function PluginPanelRightPanelHost({
           isOpen={isOpen}
           tabs={panelTabs}
         />
+        {usesBottomRegion ? (
+          <BottomTerminalRegion
+            isFocused={isFocused && panel !== null}
+            panelStateId={panelStateId}
+            tabs={panelTabs}
+            terminals={terminals}
+          />
+        ) : null}
         <PluginDetailRouteNavigationProvider
           onOpenPluginDetail={openPluginDetailTab}
         >

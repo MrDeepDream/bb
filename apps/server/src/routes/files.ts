@@ -71,7 +71,7 @@ function requireAbsoluteHostRoot(rootPath: string): string {
   return normalizedRootPath;
 }
 
-function parseRelativeFileSegments(rawPath: string): string[] {
+export function parseRelativeFileSegments(rawPath: string): string[] {
   const segments = getRelativeHostPathSegments(rawPath.replace(/\\/g, "/"));
   if (segments === null) {
     throw new ApiError(400, "invalid_path", "Invalid file path", false);

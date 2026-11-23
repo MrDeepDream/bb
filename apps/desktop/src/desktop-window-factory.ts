@@ -74,6 +74,12 @@ export interface DesktopWindowWebContents extends DesktopContextMenuWebContents 
   on(eventName: "dom-ready", listener: () => void): void;
 }
 
+interface DesktopTitleBarOverlayUpdate {
+  color?: string;
+  height?: number;
+  symbolColor?: string;
+}
+
 export interface DesktopBrowserWindow extends StatefulBrowserWindow {
   readonly id: number;
   focus(): void;
@@ -96,6 +102,7 @@ export interface DesktopBrowserWindow extends StatefulBrowserWindow {
   restore(): void;
   setFullScreen(isFullScreen: boolean): void;
   setBackgroundColor(color: string): void;
+  setTitleBarOverlay(overlay: DesktopTitleBarOverlayUpdate): void;
   setWindowButtonPosition(position: { x: number; y: number }): void;
   show(): void;
   webContents: DesktopWindowWebContents;
@@ -116,6 +123,7 @@ interface CreateDesktopWindowFactoryArgs {
   icon: DesktopWindowIcon;
   isLinuxTransparent: boolean;
   isMac: boolean;
+  isWindows: boolean;
   isLinuxFrameless: boolean;
   isQuitting(): boolean;
   shouldUseDarkColors(): boolean;
@@ -169,8 +177,50 @@ interface CreateWindowOptionsArgs {
   icon: DesktopWindowIcon;
   isLinuxTransparent: boolean;
   isMac: boolean;
+  isWindows: boolean;
   isLinuxFrameless: boolean;
   preloadPath: string;
+}
+
+const WINDOWS_TITLE_BAR_HEIGHT_PX = 40;
+const TITLE_BAR_SYMBOL_DARK = "#151515";
+const TITLE_BAR_SYMBOL_LIGHT = "#ffffff";
+
+function resolveTitleBarSymbolColor(color: string): string {
+  const value = Number.parseInt(color.slice(1, 7), 16);
+  const luminance =
+    0.2126 * ((value >> 16) & 255) +
+    0.7152 * ((value >> 8) & 255) +
+    0.0722 * (value & 255);
+  return luminance > 128 ? TITLE_BAR_SYMBOL_DARK : TITLE_BAR_SYMBOL_LIGHT;
+}
+
+function resolveWindowsTitleBarHeight(zoomFactor: number): number {
+  return Math.round(WINDOWS_TITLE_BAR_HEIGHT_PX * zoomFactor);
+}
+
+function resolveWindowFrameOptions(
+  args: CreateWindowOptionsArgs,
+): Partial<BrowserWindowConstructorOptions> {
+  if (args.isMac) {
+    return {
+      frame: false,
+      titleBarStyle: "hiddenInset",
+      trafficLightPosition: MACOS_TRAFFIC_LIGHT_POSITION,
+    };
+  }
+  if (args.isWindows) {
+    return {
+      autoHideMenuBar: true,
+      titleBarOverlay: {
+        color: args.backgroundColor,
+        height: WINDOWS_TITLE_BAR_HEIGHT_PX,
+        symbolColor: resolveTitleBarSymbolColor(args.backgroundColor),
+      },
+      titleBarStyle: "hidden",
+    };
+  }
+  return { autoHideMenuBar: true };
 }
 
 function resolveWindowStateKey(
@@ -205,13 +255,7 @@ function createWindowOptions(
     ...(args.isLinuxTransparent
       ? { backgroundColor: "#00000000", transparent: true }
       : {}),
-    ...(args.isMac
-      ? {
-          frame: false,
-          titleBarStyle: "hiddenInset" as const,
-          trafficLightPosition: MACOS_TRAFFIC_LIGHT_POSITION,
-        }
-      : { autoHideMenuBar: true }),
+    ...resolveWindowFrameOptions(args),
     height: args.bounds.height,
     icon: args.icon,
     minHeight: MIN_WINDOW_HEIGHT,
@@ -332,6 +376,7 @@ export function createDesktopWindowFactory(
           icon: args.icon,
           isLinuxTransparent: args.isLinuxTransparent,
           isMac: args.isMac,
+          isWindows: args.isWindows,
           isLinuxFrameless: args.isLinuxFrameless,
           preloadPath: args.preloadPath,
         }),
@@ -342,8 +387,23 @@ export function createDesktopWindowFactory(
           (_event, color) => {
             if (color !== null) {
               browserWindow.setBackgroundColor(color);
+              if (args.isWindows) {
+                browserWindow.setTitleBarOverlay({
+                  color,
+                  symbolColor: resolveTitleBarSymbolColor(color),
+                });
+              }
             }
           },
+        );
+      }
+      if (args.isWindows) {
+        browserWindow.webContents.ipc.on(BB_DESKTOP_ZOOM_CHANGED_CHANNEL, () =>
+          browserWindow.setTitleBarOverlay({
+            height: resolveWindowsTitleBarHeight(
+              browserWindow.webContents.getZoomFactor(),
+            ),
+          }),
         );
       }
       if (args.isMac) {
@@ -407,6 +467,11 @@ export function createDesktopWindowFactory(
       });
       browserWindow.webContents.on("dom-ready", () => {
         applyZoomFactor(browserWindow);
+        if (args.isWindows) {
+          browserWindow.setTitleBarOverlay({
+            height: resolveWindowsTitleBarHeight(zoomFactor ?? 1),
+          });
+        }
       });
       browserWindow.webContents.setWindowOpenHandler((details) => {
         const url = resolveDesktopExternalUrl(details.url);

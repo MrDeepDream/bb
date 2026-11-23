@@ -145,6 +145,11 @@ class FakeDesktopWindow implements DesktopBrowserWindow {
   public readonly webContents: FakeDesktopWindowWebContents;
   public backgroundColor: string;
   public windowButtonPositions: Array<{ x: number; y: number }> = [];
+  public titleBarOverlays: Array<{
+    color?: string;
+    height?: number;
+    symbolColor?: string;
+  }> = [];
   public fullScreen = false;
   public maximized = false;
   public minimized = false;
@@ -262,6 +267,14 @@ class FakeDesktopWindow implements DesktopBrowserWindow {
     this.backgroundColor = color;
   }
 
+  setTitleBarOverlay(overlay: {
+    color?: string;
+    height?: number;
+    symbolColor?: string;
+  }): void {
+    this.titleBarOverlays.push(overlay);
+  }
+
   setWindowButtonPosition(position: { x: number; y: number }): void {
     this.windowButtonPositions.push(position);
   }
@@ -301,6 +314,7 @@ async function createFactoryHarness(
     displayWorkAreas: [{ height: 900, width: 1440, x: 0, y: 0 }],
     icon: undefined,
     isMac: true,
+    isWindows: false,
     isLinuxTransparent: false,
     isLinuxFrameless: false,
     shouldUseDarkColors() {
@@ -792,4 +806,49 @@ describe("desktop window factory", () => {
       }
     },
   );
+
+  it("hides the Windows frame behind a native caption overlay and keeps security prefs", async () => {
+    const { createdWindows, factory } = await createFactoryHarness({
+      isMac: false,
+      isWindows: true,
+    });
+
+    await factory.createWindow({ initialUrl: null, stateKey: null });
+
+    const options = createdWindows[0]?.options;
+    expect(options).toMatchObject({
+      autoHideMenuBar: true,
+      minHeight: 600,
+      minWidth: 500,
+      titleBarOverlay: { color: "#151515", height: 40, symbolColor: "#ffffff" },
+      titleBarStyle: "hidden",
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    expect(options).not.toHaveProperty("frame");
+    expect(options).not.toHaveProperty("trafficLightPosition");
+  });
+
+  it("keeps the Windows caption overlay height in step with page zoom", async () => {
+    const { createdWindows, factory } = await createFactoryHarness({
+      isMac: false,
+      isWindows: true,
+    });
+    const browserWindow = await factory.createWindow({
+      initialUrl: "http://localhost/",
+      stateKey: null,
+    });
+    const created = createdWindows[0];
+    if (created === undefined || browserWindow !== created) {
+      throw new Error("expected the created window");
+    }
+
+    expect(created.titleBarOverlays.at(-1)).toEqual({ height: 40 });
+    created.webContents.setZoomFactor(1.5);
+    created.webContents.ipcListeners.get(BB_DESKTOP_ZOOM_CHANGED_CHANNEL)?.();
+    expect(created.titleBarOverlays.at(-1)).toEqual({ height: 60 });
+  });
 });

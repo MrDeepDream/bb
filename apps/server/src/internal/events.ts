@@ -12,6 +12,7 @@ import {
   isTurnAimedAtByEarlierStop,
   listStoredTurnCompletedKeys,
   listThreadEnvironmentAssignmentsOnHost,
+  listThreadMentionRowsByIds,
   MissingStoredTurnStartedError,
 } from "@bb/db";
 import type {
@@ -309,11 +310,21 @@ function notifyInsertedEventThreads(
       }
     }
   }
+  const completedTurnThreadIds = Array.from(eventTypesByThreadId)
+    .filter(([, eventTypes]) => eventTypes.has("turn/completed"))
+    .map(([threadId]) => threadId);
+  const projectIdByCompletedThreadId = new Map(
+    listThreadMentionRowsByIds(deps.db, completedTurnThreadIds).map(
+      (thread) => [thread.id, thread.projectId],
+    ),
+  );
   for (const [threadId, eventTypes] of eventTypesByThreadId) {
+    const projectId = projectIdByCompletedThreadId.get(threadId);
     deps.hub.notifyThread(threadId, ["events-appended"], {
       ...(backgroundActivityThreadIds.has(threadId)
         ? { backgroundActivityChanged: true }
         : {}),
+      ...(projectId === undefined ? {} : { projectId }),
       eventTypes: Array.from(eventTypes),
       timelineSequence: getLatestThreadSequence(deps.db, { threadId }),
     });

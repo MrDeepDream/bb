@@ -587,6 +587,15 @@ const hostBrowseDirectoryCommandSchema = z.object({
   path: z.string().min(1).optional(),
 });
 
+const hostListProjectDirectoryCommandSchema = z
+  .object({
+    type: z.literal("host.list_project_directory"),
+    rootPath: z.string().min(1),
+    relativePath: z.string(),
+    limit: z.number().int().positive().max(FILE_LIST_LIMIT_MAX),
+  })
+  .strict();
+
 const hostPathsExistCommandSchema = pathsExistRequestSchema
   .extend({
     type: z.literal("host.paths_exist"),
@@ -701,6 +710,11 @@ const directoryListingSchema = z.object({
   parent: z.string().nullable(),
   entries: z.array(directoryEntrySchema),
   roots: z.array(z.string()),
+});
+
+const projectDirectoryListingSchema = z.object({
+  entries: z.array(directoryEntrySchema),
+  truncated: z.boolean(),
 });
 
 const hostCommandSourceSchema = z.enum(["skill", "command"]);
@@ -1620,6 +1634,15 @@ export const hostDaemonCommandRegistry = {
     type: "host.browse_directory",
     schema: hostBrowseDirectoryCommandSchema,
     resultSchema: directoryListingSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
+  "host.list_project_directory": defineHostDaemonCommandDescriptor({
+    type: "host.list_project_directory",
+    schema: hostListProjectDirectoryCommandSchema,
+    resultSchema: projectDirectoryListingSchema,
     transport: "onlineRpc",
     retryable: true,
     flushEventsBeforeResult: false,

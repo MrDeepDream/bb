@@ -99,6 +99,7 @@ const ARGUMENTS_BY_COMMAND: Record<string, readonly string[]> = {
   "terminal close": [IDS.terminal, "--if-clean"],
   "file write": ["/tmp/x", "--host", IDS.host, "--content", "x"],
   "project create": ["--name", "x", "--root", "/tmp/x", "--host", IDS.host],
+  "project directory": [IDS.project, "--host", IDS.host],
   "project discover": ["--host", IDS.host],
   "project source add": [IDS.project, "--path", "/tmp/x", "--host", IDS.host],
   "project update": [IDS.project, "--name", "x"],

@@ -76,6 +76,7 @@ interface RootComposePanelTabContentProps {
   autoFocusTerminalId: string | null;
   tab: SecondaryFileFixedPanelTab;
   terminalTarget: RootComposeTerminalTarget | null;
+  usesBottomRegion: boolean;
 }
 
 interface RootComposeFilePreviewTabContentProps {
@@ -149,6 +150,7 @@ export function RootComposePanelTabContent({
   autoFocusTerminalId,
   tab,
   terminalTarget,
+  usesBottomRegion,
 }: RootComposePanelTabContentProps) {
   switch (tab.kind) {
     case "plugin-detail":
@@ -170,11 +172,11 @@ export function RootComposePanelTabContent({
         <LazyThreadTerminalPanel
           autoFocus={
             pane.isFocused &&
-            tab.id === activeTabId &&
+            (usesBottomRegion || tab.id === activeTabId) &&
             tab.terminalId === autoFocusTerminalId
           }
-          isPanelOpen={isPanelOpen}
-          isPanelPersistedOpen={isPanelPersistedOpen}
+          isPanelOpen={usesBottomRegion || isPanelOpen}
+          isPanelPersistedOpen={usesBottomRegion || isPanelPersistedOpen}
           onAutoFocusHandled={onAutoFocusTerminalHandled}
           onCloseStart={() => onCloseTerminal(tab.terminalId)}
           onOpenLink={onOpenPanelLink}

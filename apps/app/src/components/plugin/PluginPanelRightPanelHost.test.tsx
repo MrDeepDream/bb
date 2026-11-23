@@ -25,6 +25,7 @@ import {
   describe,
   expect,
   it,
+  onTestFinished,
   vi,
 } from "vitest";
 import { resetFixedPanelTabsStateForTest } from "@/lib/fixed-panel-tabs";
@@ -265,7 +266,8 @@ vi.mock("@/lib/file-opener-preference", () => ({
   useFileOpenerPreferenceValue: () => ({ kind: "automatic" }),
 }));
 
-vi.mock("@/lib/bb-desktop", () => ({
+vi.mock("@/lib/bb-desktop", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/bb-desktop")>()),
   getDesktopBrowserApi: () => null,
   isDesktopBrowserAvailable: () => browserState.available,
 }));
@@ -688,6 +690,13 @@ function PluginDetailNavigationLink() {
 
 function CurrentPath() {
   return <output data-testid="current-path">{useLocation().pathname}</output>;
+}
+
+function keepTerminalsInRightPanel() {
+  vi.stubGlobal("bbDesktop", { platform: "macos" });
+  onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
 }
 
 function renderHost(panelPath = "board", subPath = "", store = createStore()) {
@@ -1463,6 +1472,7 @@ describe("PluginPanelRightPanelHost", () => {
   });
 
   it("starts a terminal on the machine selected in the New tab row", async () => {
+    keepTerminalsInRightPanel();
     createTerminal.mockReturnValue(new Promise(() => undefined));
     renderHost();
     fireEvent.click(
@@ -1488,6 +1498,7 @@ describe("PluginPanelRightPanelHost", () => {
   });
 
   it("opens a plugin-created terminal once, targeted at its own scope", async () => {
+    keepTerminalsInRightPanel();
     const panelStateId = getPluginPagePanelStateId({
       panelPath: "board",
       pluginId: "demo",
@@ -1549,6 +1560,7 @@ describe("PluginPanelRightPanelHost", () => {
   });
 
   it("keeps a restored thread-targeted terminal out of thread tab sync", async () => {
+    keepTerminalsInRightPanel();
     const panelStateId = getPluginPagePanelStateId({
       panelPath: "board",
       pluginId: "demo",

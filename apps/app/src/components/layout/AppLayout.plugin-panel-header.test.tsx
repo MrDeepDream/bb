@@ -308,13 +308,15 @@ describe("AppLayout plugin panel header", () => {
     await waitFor(() => expect(trigger.dataset.panelShelf).toBeUndefined());
   });
 
-  it("keeps the fixed left trigger visible on wide viewports while a compact panel is showing", () => {
+  it("keeps the title bar trigger visible on wide viewports while a compact panel is showing", () => {
     renderPluginPanelRoute();
 
     act(() => setCompactSecondaryPanelPresentation("full"));
     expect(
-      screen.getByTestId("app-sidebar-trigger-overlay").dataset.panelShelf,
-    ).toBeUndefined();
+      screen
+        .getByTestId("app-title-bar")
+        .contains(screen.getByRole("button", { name: /^Toggle sidebar/ })),
+    ).toBe(true);
   });
 
   it.each(["rail", "list"] as const)(
@@ -339,13 +341,18 @@ describe("AppLayout plugin panel header", () => {
   );
 
   it.each(["rail", "list"] as const)(
-    "keeps the floating sidebar toggle on wide web, Windows, and Linux windows with %s navigation",
+    "moves the sidebar toggle into the title bar on wide web, Windows, and Linux windows with %s navigation",
     (placement) => {
       viewportState.navigationPlacement = placement;
       renderPluginPanelRoute();
 
       expect(screen.queryByTestId("app-window-title-bar")).toBeNull();
-      expect(screen.getByTestId("app-sidebar-trigger-overlay")).toBeTruthy();
+      expect(screen.queryByTestId("app-sidebar-trigger-overlay")).toBeNull();
+      expect(
+        screen
+          .getByTestId("app-title-bar")
+          .contains(screen.getByRole("button", { name: /^Toggle sidebar/ })),
+      ).toBe(true);
       expect(
         screen.getByTestId("app-layout-root").dataset.framed,
       ).toBeUndefined();

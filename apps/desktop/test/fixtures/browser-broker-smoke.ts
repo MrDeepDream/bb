@@ -33,6 +33,7 @@ async function main() {
     focusHostWebContents: () => {},
     pagePreloadPath: null,
     resolveAppCommand: () => null,
+    watchPageInput: () => undefined,
   });
   const broker = createDesktopBrowserBroker({ manager, product: "BB smoke" });
   broker.registerWindow(window);

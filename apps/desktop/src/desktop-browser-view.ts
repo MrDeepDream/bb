@@ -280,6 +280,7 @@ export interface CreateDesktopBrowserViewManagerArgs {
     input: AppShortcutInput,
     hostWebContentsId: number,
   ) => AppCommandId | null;
+  watchPageInput: (webContents: WebContents, hostWebContentsId: number) => void;
 }
 
 interface HostScopedRequestArgs<TRequest> {
@@ -1033,6 +1034,7 @@ export function createDesktopBrowserViewManager(
       }, 0);
     });
 
+    args.watchPageInput(webContents, hostWindow.webContents.id);
     webContents.on("before-input-event", (event, input) => {
       if (entry.registry !== entries) {
         event.preventDefault();

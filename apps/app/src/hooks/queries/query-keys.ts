@@ -157,6 +157,15 @@ type ProjectPathsQueryKeyPrefix = readonly [
   typeof PROJECT_PATHS_QUERY_KEY,
   string,
 ];
+type ProjectDirectoryQueryKeyPrefix = readonly [
+  ...ProjectPathsQueryKeyPrefix,
+  "directory",
+];
+type ProjectDirectoryQueryKey = readonly [
+  ...ProjectDirectoryQueryKeyPrefix,
+  string,
+  string,
+];
 type ProjectFilePreviewQueryKey = readonly [
   typeof PROJECT_FILE_PREVIEW_QUERY_KEY,
   string | undefined,
@@ -620,6 +629,20 @@ export function projectPathsQueryKeyPrefix(
   projectId: string,
 ): ProjectPathsQueryKeyPrefix {
   return [PROJECT_PATHS_QUERY_KEY, projectId];
+}
+
+export function projectDirectoryQueryKeyPrefix(
+  projectId: string,
+): ProjectDirectoryQueryKeyPrefix {
+  return [...projectPathsQueryKeyPrefix(projectId), "directory"];
+}
+
+export function projectDirectoryQueryKey(
+  projectId: string,
+  hostId: string,
+  relativePath: string,
+): ProjectDirectoryQueryKey {
+  return [...projectDirectoryQueryKeyPrefix(projectId), hostId, relativePath];
 }
 
 export function projectSourceBranchesQueryKey(

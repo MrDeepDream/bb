@@ -29,7 +29,13 @@ import {
   useSystemConfig,
 } from "@/hooks/queries/system-queries";
 import { useImmediateRouteNavigate } from "@/components/ui/app-route-anchor";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
+import { BottomTerminalRegion } from "@/components/layout/AppShellRegions";
+import {
+  bottomRegionOpenAtom,
+  contentShellHasPanelRoomAtom,
+  useUsesAppShellRegions,
+} from "@/lib/app-shell-regions";
 import { useDesktopBrowserReveal } from "@/lib/use-desktop-browser-reveal";
 import {
   type ThreadTimelineConsumerMessageAction,
@@ -328,26 +334,35 @@ function ThreadDetailViewInternal(
     () => threadFixedTabs.entries.map((entry) => entry.tab),
     [threadFixedTabs.entries],
   );
+  const usesBottomRegion = useUsesAppShellRegions();
+  const hasPanelRoom = useAtomValue(contentShellHasPanelRoomAtom);
+  const isBottomRegionOpen = useAtomValue(bottomRegionOpenAtom);
   const fixedPanelTabsState = useReconciledFixedPanelTabsState({
     fixedTabs: threadFixedViewTabs,
     isAuthoritative:
       threadFixedTabs.isReady &&
       (gitDiffTabStatus === "eligible" || gitDiffTabStatus === "ineligible"),
+    openFirstFixedTabWhenEmpty: usesBottomRegion && hasPanelRoom === true,
     panelStateId: threadId,
     syncThreadId: threadId,
   });
-  const isPersistedSecondaryPanelOpen = fixedPanelTabsState.secondary.isOpen;
   const activeFixedSecondaryTab = getActiveFixedSecondaryTab({
     fixedPanelTabsState,
+    hidesTerminals: usesBottomRegion,
   });
+  const isPersistedSecondaryPanelOpen =
+    fixedPanelTabsState.secondary.isOpen &&
+    (!usesBottomRegion || activeFixedSecondaryTab !== null);
   const activeFixedSecondaryTabId = activeFixedSecondaryTab?.id ?? null;
   const renderSecondaryPanelAsDrawer = isCompactViewport;
+  const usesTransientPanelVisibility =
+    isCompactViewport || (usesBottomRegion && hasPanelRoom === false);
   const secondaryPanelDrawerVisibility =
     useThreadSecondaryPanelDrawerVisibility({
-      isCompactViewport: renderSecondaryPanelAsDrawer,
+      isCompactViewport: usesTransientPanelVisibility,
       threadId,
     });
-  const isWorkspacePanelOpen = renderSecondaryPanelAsDrawer
+  const isWorkspacePanelOpen = usesTransientPanelVisibility
     ? secondaryPanelDrawerVisibility.isDrawerVisible
     : isPersistedSecondaryPanelOpen;
   const isSecondaryPanelOpen = isWorkspacePanelOpen;
@@ -367,7 +382,11 @@ function ThreadDetailViewInternal(
     setThreadSecondaryPanel(null);
   }, [setThreadSecondaryPanel]);
   const toggleDefaultPersistedSecondaryPanel =
-    useToggleThreadSecondaryPanelSelection(threadId, threadId);
+    useToggleThreadSecondaryPanelSelection(
+      threadId,
+      threadId,
+      usesBottomRegion,
+    );
   const threadQueryState = useConnectionAwareQueryState({
     hasResolvedData: thread !== undefined,
     isFetching: threadDetailBootstrapQuery.isFetching || isFetching,
@@ -391,10 +410,11 @@ function ThreadDetailViewInternal(
       threadId,
     });
   const terminalsListQuery = useThreadTerminals(threadId, {
-    enabled: isSecondaryPanelOpen,
+    enabled:
+      isSecondaryPanelOpen ||
+      (usesBottomRegion && isBottomRegionOpen && isFocused),
   });
   const {
-    activeBrowserTab,
     activeHostFileLineRange,
     activeHostFilePath,
     activeStorageFilePath,
@@ -437,7 +457,10 @@ function ThreadDetailViewInternal(
   });
   const browserDeckThreadId = thread?.id ?? null;
   const browserDeckEnvironmentId = thread?.environmentId ?? null;
-  const selectedBrowserTabId = activeBrowserTab?.id ?? null;
+  const selectedBrowserTabId =
+    activeFixedSecondaryTab?.kind === "browser"
+      ? activeFixedSecondaryTab.id
+      : null;
   const renderBrowserDeck = useCallback(
     ({
       canHandleBrowserCommands,
@@ -667,7 +690,7 @@ function ThreadDetailViewInternal(
     closePersistedPanel: closeThreadSecondaryPanel,
     drawerVisibility: secondaryPanelDrawerVisibility,
     isPersistedOpen: isPersistedSecondaryPanelOpen,
-    isCompactViewport: renderSecondaryPanelAsDrawer,
+    isCompactViewport: usesTransientPanelVisibility,
     openPersistedPanel: setThreadSecondaryPanel,
     openPersistedStorageFile: panelFiles.openStorageFile,
     openPersistedWorkspaceFile: panelFiles.openWorkspaceFile,
@@ -951,6 +974,7 @@ function ThreadDetailViewInternal(
     acceptsSession: acceptsThreadTerminal,
     tabsCarryTarget: false,
     reveal: openCompactDrawer,
+    usesBottomRegion,
     onCloseLastTab: secondaryPanelDrawerVisibility.closeDrawer,
   });
   const appNavigationCapabilities = useMemo(
@@ -962,6 +986,9 @@ function ThreadDetailViewInternal(
     [openLiveFilePreview, panel, terminals.open],
   );
   const handleCloseWindowRequest = useCallback(() => {
+    if (terminals.closeFocusedBottomTerminal()) {
+      return true;
+    }
     if (!isSecondaryPanelOpen) {
       return false;
     }
@@ -1528,11 +1555,13 @@ function ThreadDetailViewInternal(
         return (
           <LazyThreadTerminalPanel
             autoFocus={
-              tab.id === activeFixedSecondaryTabId &&
+              (usesBottomRegion || tab.id === activeFixedSecondaryTabId) &&
               tab.terminalId === terminals.autoFocusTerminalId
             }
-            isPanelOpen={isSecondaryPanelOpen}
-            isPanelPersistedOpen={isPersistedSecondaryPanelOpen}
+            isPanelOpen={usesBottomRegion || isSecondaryPanelOpen}
+            isPanelPersistedOpen={
+              usesBottomRegion || isPersistedSecondaryPanelOpen
+            }
             onAutoFocusHandled={terminals.handleAutoFocusHandled}
             onCloseStart={() => terminals.close(tab.terminalId)}
             onOpenLink={handleOpenTimelineLink}
@@ -1651,6 +1680,7 @@ function ThreadDetailViewInternal(
   const panelTabs: readonly SecondaryPanelRenderableTab[] =
     syncedOrderedSecondaryFileTabs.map((tab): SecondaryPanelRenderableTab => ({
       ...presentPanelTab(tab),
+      isHidden: usesBottomRegion && tab.kind === "terminal",
       tab,
       renderContent: () => renderSecondaryTabContent(tab),
       onSelect:
@@ -1692,6 +1722,14 @@ function ThreadDetailViewInternal(
               isOpen={isSecondaryPanelOpen}
               tabs={panelTabs}
             />
+            {usesBottomRegion && threadId !== undefined ? (
+              <BottomTerminalRegion
+                isFocused={isFocused}
+                panelStateId={threadId}
+                tabs={panelTabs}
+                terminals={terminals}
+              />
+            ) : null}
             {threadFixedTabs.observers}
             <ThreadDetailSecondaryContent
               header={timelineHeader}

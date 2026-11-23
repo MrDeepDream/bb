@@ -8,6 +8,7 @@ import type {
   HostDaemonOnlineRpcResult,
   HostPathEntryKind,
 } from "@bb/host-daemon-contract";
+import { isPathWithinDirectory } from "@bb/process-utils";
 import {
   CommandDispatchError,
   type CommandDispatchOptions,
@@ -198,6 +199,109 @@ export async function browseHostDirectory(
     parent: parent === directory ? null : parent,
     entries,
     roots: await listFilesystemRoots(),
+  };
+}
+
+function isGitSegment(segment: string): boolean {
+  return segment.toLowerCase() === ".git";
+}
+
+function parseProjectDirectorySegments(relativePath: string): string[] {
+  if (relativePath === "") return [];
+  const segments = relativePath.split("/");
+  if (
+    relativePath.includes("\0") ||
+    relativePath.includes("\\") ||
+    segments.some(
+      (segment) =>
+        segment === "" ||
+        segment === "." ||
+        segment === ".." ||
+        isGitSegment(segment),
+    )
+  ) {
+    throw new CommandDispatchError(
+      "invalid_path",
+      "Directory is outside the project",
+    );
+  }
+  return segments;
+}
+
+function hasExactProjectSegments(
+  realRootPath: string,
+  realDirectory: string,
+  requested: readonly string[],
+): boolean {
+  if (!isPathWithinDirectory(realRootPath, realDirectory)) return false;
+  const relative = path.relative(realRootPath, realDirectory);
+  const actual = relative === "" ? [] : relative.split(path.sep);
+  const normalize = (segment: string) =>
+    process.platform === "win32" ? segment.toLowerCase() : segment;
+  return (
+    actual.length === requested.length &&
+    actual.every(
+      (segment, index) =>
+        !isGitSegment(segment) &&
+        normalize(segment) === normalize(requested[index] ?? ""),
+    )
+  );
+}
+
+export async function listHostProjectDirectory(
+  command: CommandOf<"host.list_project_directory">,
+): Promise<HostDaemonOnlineRpcResult<"host.list_project_directory">> {
+  if (!path.isAbsolute(command.rootPath)) {
+    throw new CommandDispatchError("invalid_path", "rootPath must be absolute");
+  }
+  const segments = parseProjectDirectorySegments(command.relativePath);
+  const realRootPath = await resolveNonSymlinkDirectoryPath({
+    description: "Project root",
+    path: command.rootPath,
+  });
+  const directory = await fs.realpath(path.join(realRootPath, ...segments));
+  if (!hasExactProjectSegments(realRootPath, directory, segments)) {
+    throw new CommandDispatchError(
+      "invalid_path",
+      "Directory is outside the project",
+    );
+  }
+
+  const dirents = await fs.readdir(directory, { withFileTypes: true });
+  const candidates: {
+    kind: HostPathEntryKind;
+    name: string;
+    sortName: string;
+  }[] = [];
+  for (const dirent of dirents) {
+    if (dirent.isSymbolicLink() || isGitSegment(dirent.name)) continue;
+    const kind = dirent.isDirectory()
+      ? "directory"
+      : dirent.isFile()
+        ? "file"
+        : null;
+    if (kind === null) continue;
+    candidates.push({
+      kind,
+      name: dirent.name,
+      sortName: dirent.name.toLowerCase(),
+    });
+  }
+  candidates.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === "directory" ? -1 : 1;
+    if (a.sortName !== b.sortName) return a.sortName < b.sortName ? -1 : 1;
+    if (a.name === b.name) return 0;
+    return a.name < b.name ? -1 : 1;
+  });
+
+  const prefix = segments.length === 0 ? "" : `${segments.join("/")}/`;
+  return {
+    entries: candidates.slice(0, command.limit).map(({ kind, name }) => ({
+      kind,
+      name,
+      path: `${prefix}${name}`,
+    })),
+    truncated: candidates.length > command.limit,
   };
 }
 

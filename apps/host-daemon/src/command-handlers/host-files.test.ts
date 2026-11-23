@@ -13,6 +13,7 @@ import {
 } from "../command-dispatch-support.js";
 import {
   browseHostDirectory,
+  listHostProjectDirectory,
   readHostFile,
   readHostFileChunk,
 } from "./host-files.js";
@@ -350,6 +351,150 @@ describe("browseHostDirectory", () => {
     ).rejects.toMatchObject({
       code: "invalid_path",
       message: expect.stringContaining("is not a directory"),
+    });
+  });
+});
+
+describe("listHostProjectDirectory", () => {
+  const list = (rootPath: string, relativePath: string, limit = 100) =>
+    listHostProjectDirectory({
+      type: "host.list_project_directory",
+      rootPath,
+      relativePath,
+      limit,
+    });
+  const linkDirectory = (target: string, linkPath: string) =>
+    fs.symlink(
+      target,
+      linkPath,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+  it("shows dotfiles, hides .git, and sorts folders first by lowercase name", async () => {
+    const root = await makeTempDir("bb-project-dir-");
+    await fs.mkdir(path.join(root, ".git"));
+    await fs.mkdir(path.join(root, "zeta"));
+    await fs.mkdir(path.join(root, "Alpha"));
+    await fs.mkdir(path.join(root, ".github"));
+    await fs.writeFile(path.join(root, ".env"), "x", "utf8");
+    await fs.writeFile(path.join(root, "beta.txt"), "x", "utf8");
+    await fs.writeFile(path.join(root, "Aardvark.txt"), "x", "utf8");
+
+    const result = await list(root, "");
+
+    expect(result.truncated).toBe(false);
+    expect(result.entries.map(({ kind, name }) => [kind, name])).toEqual([
+      ["directory", ".github"],
+      ["directory", "Alpha"],
+      ["directory", "zeta"],
+      ["file", ".env"],
+      ["file", "Aardvark.txt"],
+      ["file", "beta.txt"],
+    ]);
+  });
+
+  it("returns project-relative paths for nested folders", async () => {
+    const root = await makeTempDir("bb-project-dir-nested-");
+    await fs.mkdir(path.join(root, "src", "lib"), { recursive: true });
+    await fs.writeFile(path.join(root, "src", "lib", "a.ts"), "x", "utf8");
+
+    await expect(list(root, "src/lib")).resolves.toEqual({
+      entries: [{ kind: "file", name: "a.ts", path: "src/lib/a.ts" }],
+      truncated: false,
+    });
+  });
+
+  it("sets truncated at the limit after sorting", async () => {
+    const root = await makeTempDir("bb-project-dir-limit-");
+    await fs.writeFile(path.join(root, "a.txt"), "x", "utf8");
+    await fs.writeFile(path.join(root, "b.txt"), "x", "utf8");
+    await fs.mkdir(path.join(root, "z-folder"));
+
+    const atLimit = await list(root, "", 3);
+    const overLimit = await list(root, "", 2);
+
+    expect(atLimit.truncated).toBe(false);
+    expect(overLimit.truncated).toBe(true);
+    expect(overLimit.entries.map((entry) => entry.name)).toEqual([
+      "z-folder",
+      "a.txt",
+    ]);
+  });
+
+  it("neither lists nor enters a link that points outside the root", async () => {
+    const root = await makeTempDir("bb-project-dir-escape-");
+    const outside = await makeTempDir("bb-project-dir-outside-");
+    await fs.writeFile(path.join(outside, "secret.txt"), "x", "utf8");
+    await linkDirectory(outside, path.join(root, "escape"));
+
+    const result = await list(root, "");
+
+    expect(result.entries).toEqual([]);
+    await expect(list(root, "escape")).rejects.toMatchObject({
+      code: "invalid_path",
+    });
+  });
+
+  it("refuses a path through a link that points inside the root", async () => {
+    const root = await makeTempDir("bb-project-dir-inner-link-");
+    await fs.mkdir(path.join(root, "real", "sub"), { recursive: true });
+    await linkDirectory(path.join(root, "real"), path.join(root, "link"));
+
+    await expect(list(root, "real/sub")).resolves.toMatchObject({
+      truncated: false,
+    });
+    await expect(list(root, "link")).rejects.toMatchObject({
+      code: "invalid_path",
+    });
+    await expect(list(root, "link/sub")).rejects.toMatchObject({
+      code: "invalid_path",
+    });
+  });
+
+  it.each([
+    "..",
+    "../other",
+    "a/../..",
+    ".",
+    "a//b",
+    "/abs",
+    "a\\b",
+    ".git",
+    ".GIT",
+    "src/.GiT/hooks",
+  ])("refuses the relative path %s", async (relativePath) => {
+    const root = await makeTempDir("bb-project-dir-refuse-");
+    await fs.mkdir(path.join(root, ".git", "hooks"), { recursive: true });
+    await fs.mkdir(path.join(root, "src", ".GiT", "hooks"), {
+      recursive: true,
+    });
+
+    await expect(list(root, relativePath)).rejects.toMatchObject({
+      code: "invalid_path",
+    });
+  });
+
+  it.runIf(process.platform === "win32")(
+    "refuses Windows aliases of .git",
+    async () => {
+      const root = await makeTempDir("bb-project-dir-alias-");
+      await fs.mkdir(path.join(root, ".git"));
+
+      for (const alias of [".git.", ".git ", ".git::$INDEX_ALLOCATION"]) {
+        await expect(list(root, alias)).rejects.toBeDefined();
+      }
+    },
+  );
+
+  it("raises ENOENT for a missing folder instead of an empty list", async () => {
+    const root = await makeTempDir("bb-project-dir-missing-");
+
+    await expect(list(root, "gone")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects a relative root", async () => {
+    await expect(list("relative/root", "")).rejects.toMatchObject({
+      code: "invalid_path",
     });
   });
 });

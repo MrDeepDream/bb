@@ -11,3 +11,15 @@ export const bbDesktopWindowFindRequestSchema = z
 export type BbDesktopWindowFindRequest = z.infer<
   typeof bbDesktopWindowFindRequestSchema
 >;
+
+const BB_DESKTOP_MAX_MENU_POPUP_COORDINATE = 32_767;
+
+export const bbDesktopPopupApplicationMenuRequestSchema = z
+  .object({
+    x: z.number().int().min(0).max(BB_DESKTOP_MAX_MENU_POPUP_COORDINATE),
+    y: z.number().int().min(0).max(BB_DESKTOP_MAX_MENU_POPUP_COORDINATE),
+  })
+  .strict();
+export type BbDesktopPopupApplicationMenuRequest = z.infer<
+  typeof bbDesktopPopupApplicationMenuRequestSchema
+>;
