@@ -120,6 +120,18 @@ export function normalizeCustomServerUrl(rawUrl: string): string | null {
   return parsed.toString().replace(/\/$/u, "");
 }
 
+export function connectServersAdoptTarget(
+  target: DesktopServerTarget,
+  servers: readonly ConnectServerRef[],
+): boolean {
+  return (
+    target.kind === "custom" &&
+    servers.some(
+      (server) => normalizeCustomServerUrl(server.url) === target.url,
+    )
+  );
+}
+
 function parsePersistedServerTarget(raw: string): PersistedServerTarget | null {
   try {
     const parsedJson: unknown = JSON.parse(raw);

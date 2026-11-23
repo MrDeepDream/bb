@@ -229,7 +229,7 @@ function clampScrollTopToContent(container: HTMLElement) {
 }
 
 function selectTab(name: string) {
-  fireEvent.click(screen.getByRole("button", { name }));
+  fireEvent.click(screen.getByRole("tab", { name }));
 }
 
 afterEach(() => {

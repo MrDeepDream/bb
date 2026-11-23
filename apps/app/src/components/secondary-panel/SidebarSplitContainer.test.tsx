@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import {
   SidebarSplitContainer,
+  type SidebarPendingTabMove,
   type SidebarSplitPaneRenderArgs,
   type SidebarSplitTabDescriptor,
 } from "./SidebarSplitContainer";
@@ -107,6 +108,65 @@ function renderContainer({
         />
       </TooltipProvider>
     </SidebarProvider>,
+  );
+}
+
+const VIEW_SPLIT_TABS: readonly SidebarSplitTabDescriptor[] = [
+  { id: "fixed-info", label: "Info", restoresPlacementAfterRemoval: true },
+  { id: "file", label: "f31.ts", restoresPlacementAfterRemoval: true },
+  { id: "other", label: "other.ts", restoresPlacementAfterRemoval: true },
+];
+const VIEW_TAB: SidebarSplitTabDescriptor = {
+  id: "file-view-2",
+  label: "f31.ts",
+  restoresPlacementAfterRemoval: true,
+};
+
+function ViewSplitHarness({
+  initialActiveTabId,
+  side,
+}: {
+  initialActiveTabId: string;
+  side: "right" | "bottom";
+}) {
+  const [tabs, setTabs] = useState(VIEW_SPLIT_TABS);
+  const [activeTabId, setActiveTabId] = useState(initialActiveTabId);
+  const [pending, setPending] = useState<SidebarPendingTabMove | null>(null);
+  return (
+    <SidebarProvider>
+      <TooltipProvider>
+        <button
+          type="button"
+          onClick={() => {
+            setTabs([...VIEW_SPLIT_TABS, VIEW_TAB]);
+            setActiveTabId(VIEW_TAB.id);
+            setPending({ anchorTabId: "file", tabId: VIEW_TAB.id, side });
+          }}
+        >
+          Split view
+        </button>
+        <SidebarSplitContainer
+          isTabListReady
+          activeTabId={activeTabId}
+          fixedTabIds={["fixed-info"]}
+          isFullScreen={false}
+          onActivateTab={setActiveTabId}
+          onGlobalTabReorder={vi.fn()}
+          onPendingTabMoveDone={() => setPending(null)}
+          onToggleFullScreen={vi.fn()}
+          panelStateId={`${PANEL_STATE_ID}-view-split`}
+          pendingTabMove={pending}
+          renderPane={({ group, isFocused, paneId }) => (
+            <div
+              data-testid={`view-pane-${paneId}`}
+              data-active-tab={group.activeTabId}
+              data-pane-focused={String(isFocused)}
+            />
+          )}
+          tabs={tabs}
+        />
+      </TooltipProvider>
+    </SidebarProvider>
   );
 }
 
@@ -1061,17 +1121,24 @@ describe("SidebarSplitContainer", () => {
     expect(screen.queryByTestId("iframe-drag-guard-overlay")).toBeNull();
   });
 
-  it("keeps right-panel separators out of the tab order", () => {
+  it("resizes right-panel panes from the keyboard", () => {
     persistState(createTwoPaneState());
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 0, 100, 100));
     renderContainer({
       renderPane: ({ paneId }) => <div>{paneId}</div>,
     });
 
     const separator = screen.getByRole("separator");
+    expect(separator.tabIndex).toBe(0);
+    fireEvent.focus(separator);
+    expect(separator.getAttribute("aria-valuenow")).toBe("50");
     fireEvent.keyDown(separator, { key: "ArrowRight" });
 
-    expect(separator.tabIndex).toBe(-1);
+    expect(separator.getAttribute("aria-valuenow")).toBe("52");
     expect(document.querySelector("[data-split-resize-snap-guide]")).toBeNull();
+    rect.mockRestore();
   });
 
   it("does not resize or persist when the divider is pressed and released in place", () => {
@@ -1385,4 +1452,32 @@ describe("SidebarSplitContainer", () => {
     expect(warn).toHaveBeenCalledOnce();
     expect(setItem).toHaveBeenCalledWith(storageKey, expect.any(String));
   });
+
+  it.each([
+    { side: "right", initialActiveTabId: "file" },
+    { side: "bottom", initialActiveTabId: "file" },
+    { side: "right", initialActiveTabId: "other" },
+    { side: "bottom", initialActiveTabId: "other" },
+  ] as const)(
+    "keeps the anchor tab shown after Split $side with $initialActiveTabId active",
+    async ({ side, initialActiveTabId }) => {
+      render(
+        <ViewSplitHarness
+          initialActiveTabId={initialActiveTabId}
+          side={side}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Split view" }));
+
+      await waitFor(() => expect(listPaneIds()).toHaveLength(2));
+      const [sourcePaneId, viewPaneId] = listPaneIds();
+      const sourcePane = screen.getByTestId(`view-pane-${sourcePaneId}`);
+      const viewPane = screen.getByTestId(`view-pane-${viewPaneId}`);
+      expect(sourcePane.dataset.activeTab).toBe("file");
+      expect(sourcePane.dataset.paneFocused).toBe("false");
+      expect(viewPane.dataset.activeTab).toBe(VIEW_TAB.id);
+      expect(viewPane.dataset.paneFocused).toBe("true");
+    },
+  );
 });

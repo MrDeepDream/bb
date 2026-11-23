@@ -946,9 +946,7 @@ describe("BB Official plugin detail routing", () => {
         { wrapper },
       );
 
-      fireEvent.contextMenu(
-        await screen.findByRole("button", { name: target }),
-      );
+      fireEvent.contextMenu(await screen.findByRole("tab", { name: target }));
       fireEvent.click(screen.getByRole("menuitem", { name: action }));
 
       await waitFor(() => {

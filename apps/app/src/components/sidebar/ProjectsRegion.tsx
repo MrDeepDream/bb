@@ -1,6 +1,8 @@
 import {
   useQueries,
   useQuery,
+  useQueryClient,
+  type QueryClient,
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { defaultRangeExtractor, type Range } from "@tanstack/react-virtual";
@@ -10,10 +12,13 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent,
 } from "react";
 import {
   findLocalPathProjectSourceForHost,
+  getRelativeHostPath,
+  isAbsoluteHostPath,
   PERSONAL_PROJECT_ID,
   type ProjectSource,
 } from "@bb/domain";
@@ -25,13 +30,21 @@ import { Icon } from "@bb/shared-ui/icon";
 import { resolveAbsoluteFilePath } from "@bb/shared-ui/lib/absolute-file-path";
 import { isNonImeKey } from "@bb/shared-ui/lib/ime-keyboard";
 import { cn } from "@bb/shared-ui/lib/utils";
+import {
+  fileOpenerIdFromActionId,
+  parseFileOpenerParams,
+} from "@/components/plugin/file-opener-tabs";
 import { appToast } from "@/components/ui/app-toast";
+import { getCachedSidebarNavigationThreads } from "@/hooks/cache-owners/query-cache";
 import { projectDirectoryQueryKey } from "@/hooks/queries/query-keys";
 import { sidebarNavigationThreadSelectionQueryOptions } from "@/hooks/queries/sidebar-navigation-query";
 import { useCompilerSafeVirtualizer } from "@/hooks/useCompilerSafeVirtualizer";
 import { usePathPickerHost } from "@/hooks/useLocalPathPicker";
 import { useQuickCreateProjectController } from "@/hooks/useQuickCreateProject";
-import { getFocusedAppNavigationSurface } from "@/lib/app-navigation-host";
+import {
+  getFocusedAppNavigationSurface,
+  subscribeFocusedAppNavigationSurface,
+} from "@/lib/app-navigation-host";
 import { BbHttpError, sdk } from "@/lib/sdk";
 import {
   flattenProjectTreeRows,
@@ -108,6 +121,72 @@ function combineProjectListings(
       truncated: result.data.truncated,
     };
   });
+}
+
+function subscribeFocusedPanelFile(listener: () => void): () => void {
+  const subscribeTabs = () =>
+    getFocusedAppNavigationSurface()?.panel.subscribeTabs(listener);
+  let unsubscribeTabs = subscribeTabs();
+  const unsubscribeSurface = subscribeFocusedAppNavigationSurface(() => {
+    unsubscribeTabs?.();
+    unsubscribeTabs = subscribeTabs();
+    listener();
+  });
+  return () => {
+    unsubscribeSurface();
+    unsubscribeTabs?.();
+  };
+}
+
+function readFocusedPanelFileParams(): string | null {
+  const tabs = getFocusedAppNavigationSurface()?.panel.getTabs();
+  if (tabs === undefined || !tabs.open || tabs.selectedKey === null) {
+    return null;
+  }
+  const detail = tabs.tabs.find((tab) => tab.key === tabs.selectedKey)?.detail;
+  if (detail?.kind === "file") {
+    return JSON.stringify({ path: detail.path, source: { kind: "host" } });
+  }
+  return detail?.kind === "plugin" &&
+    fileOpenerIdFromActionId(detail.tab.id) !== null
+    ? JSON.stringify(detail.params)
+    : null;
+}
+
+function resolveActiveFileRowKey(
+  paramsJson: string | null,
+  roots: readonly ProjectTreeRoot[],
+  hostId: string | null,
+  queryClient: QueryClient,
+): string | null {
+  const file = parseFileOpenerParams(paramsJson);
+  if (file === null) return null;
+  const { path, source } = file;
+  if (isAbsoluteHostPath(path)) {
+    if ((source.experimental_hostId ?? hostId) !== hostId) return null;
+    let closest: { projectId: string; relativePath: string } | null = null;
+    for (const root of roots) {
+      if (root.rootPath === null) continue;
+      const relativePath = getRelativeHostPath({
+        rootPath: root.rootPath,
+        candidatePath: path,
+      });
+      if (
+        relativePath &&
+        (closest === null || relativePath.length < closest.relativePath.length)
+      ) {
+        closest = { projectId: root.projectId, relativePath };
+      }
+    }
+    return closest && projectTreeKey(closest.projectId, closest.relativePath);
+  }
+  if (source.kind !== "workspace") return null;
+  const projectId =
+    source.projectId ??
+    getCachedSidebarNavigationThreads(queryClient).find(
+      (thread) => thread.id === source.threadId,
+    )?.projectId;
+  return projectId ? projectTreeKey(projectId, path) : null;
 }
 
 function ProjectFileBadge({
@@ -217,7 +296,13 @@ function ProjectTreeGlyph({ row }: { row: ProjectTreeRow }) {
 export function ProjectsRegion() {
   const quickCreateProject = useQuickCreateProjectController();
   const { hostId } = usePathPickerHost();
+  const queryClient = useQueryClient();
   const { data: projects } = useQuery(projectRootsQueryOptions);
+  const activeFileParams = useSyncExternalStore(
+    subscribeFocusedPanelFile,
+    readFocusedPanelFileParams,
+    () => null,
+  );
   const [openKeys, setOpenKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -240,6 +325,10 @@ export function ProjectsRegion() {
           hostId === null ? "Host unavailable" : "Not on this host",
       })),
     [hostId, projects],
+  );
+  const activeFileRowKey = useMemo(
+    () => resolveActiveFileRowKey(activeFileParams, roots, hostId, queryClient),
+    [activeFileParams, hostId, queryClient, roots],
   );
   const openFolders = useMemo(
     () => listVisibleOpenFolders(roots, openKeys),
@@ -476,8 +565,11 @@ export function ProjectsRegion() {
                   aria-posinset={row.posInSet}
                   aria-setsize={row.setSize}
                   aria-expanded={row.expandable ? row.expanded : undefined}
+                  aria-current={
+                    row.key === activeFileRowKey ? "true" : undefined
+                  }
                   data-active={item.index === activeIndex ? "" : undefined}
-                  className="absolute inset-x-2 top-0 flex h-6 cursor-default select-none items-center gap-1.5 rounded-[5px] pr-2 text-sm text-sidebar-foreground data-active:group-focus-visible/tree:outline-2 data-active:group-focus-visible/tree:-outline-offset-2 data-active:group-focus-visible/tree:outline-ring"
+                  className="absolute inset-x-2 top-0 flex h-6 cursor-default select-none items-center gap-1.5 rounded-[5px] pr-2 text-sm text-sidebar-foreground aria-[current=true]:bg-state-active data-active:group-focus-visible/tree:outline-2 data-active:group-focus-visible/tree:-outline-offset-2 data-active:group-focus-visible/tree:outline-ring"
                   style={{
                     paddingLeft:
                       ROW_BASE_INDENT_PX + row.level * ROW_LEVEL_INDENT_PX,

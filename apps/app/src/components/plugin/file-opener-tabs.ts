@@ -11,6 +11,7 @@ import {
   type FileOpenerOverride,
 } from "@/lib/plugin-slot-resolvers";
 import type { PluginFileOpenerSlot } from "@/lib/plugin-slots";
+import { getFileNameFromPath } from "@/components/secondary-panel/rightPanelFileVisuals";
 import type { OpenSecondaryPanelTabRequest } from "@/components/secondary-panel/useThreadFileTabs";
 
 const FILE_OPENER_ACTION_ID_PREFIX = "file-opener:";
@@ -37,13 +38,18 @@ export function buildFileOpenerPanelTab(
   opener: Pick<PluginFileOpenerSlot, "id" | "pluginId">,
   file: PluginFileOpenerFile,
   owner: ThreadTabFileOpenerOwner,
+  view?: number,
 ): PluginPanelFixedPanelTab {
   return {
     ...createPluginPanelFixedPanelTab({
       actionId: `${FILE_OPENER_ACTION_ID_PREFIX}${opener.id}`,
-      paramsJson: JSON.stringify({ path: file.path, source: file.source }),
+      paramsJson: JSON.stringify({
+        path: file.path,
+        source: file.source,
+        ...(view === undefined ? {} : { view }),
+      }),
       pluginId: opener.pluginId,
-      title: file.path.split("/").at(-1) ?? file.path,
+      title: getFileNameFromPath({ path: file.path }),
     }),
     fileOpenerOwner: owner,
   };

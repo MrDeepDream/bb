@@ -19,6 +19,7 @@
   "include": [
     "server.ts",
     "server.test.ts",
+    "host.ts",
     "app.tsx",
     "app.test.tsx",
     "components",

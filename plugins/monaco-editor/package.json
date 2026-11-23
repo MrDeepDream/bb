@@ -17,9 +17,11 @@
   "files": [
     "dist",
     "server.ts",
+    "host.ts",
     "app.tsx",
     "components",
     "lib",
+    "skills",
     "README.md"
   ],
   "engines": {
@@ -33,7 +35,8 @@
       "icon": "Code"
     },
     "server": "./server.ts",
-    "app": "./app.tsx"
+    "app": "./app.tsx",
+    "host": "./host.ts"
   },
   "keywords": [
     "bb-plugin"

@@ -7,5 +7,6 @@ export default defineConfig({
     name: "bb-plugin-monaco-editor",
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules/**"],
+    server: { deps: { inline: ["monaco-editor"] } },
   },
 });

@@ -258,7 +258,7 @@ export const APP_COMMAND_GROUPS: readonly AppCommandGroup[] = [
       command(
         "file.quickOpen",
         "Quick open file",
-        "Search workspace files in a new panel tab.",
+        "Search workspace files in a new panel tab. In a file editor on Windows and Linux, Ctrl+Shift+N and Ctrl+E also run it.",
       ),
       command(
         "terminal.open",

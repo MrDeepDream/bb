@@ -507,7 +507,7 @@ export function PluginsView({ detailKey }: { detailKey?: string } = {}) {
     PLUGINS_BROWSE_PANEL_STATE_ID,
   );
   const {
-    closeTab: closePanelTab,
+    closeTabNow: closePanelTab,
     openPluginDetail,
     orderedSecondaryFileTabs,
     reorderTab,

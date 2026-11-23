@@ -701,6 +701,57 @@ describe("sidebar split layout", () => {
   });
 });
 
+describe("moveSidebarTab drop position", () => {
+  const twoGroups = () =>
+    splitOff(
+      createSidebarSplitState(
+        [SIDEBAR_FIXED_INFO_TAB_ID, "file-a", "file-b", "file-c"],
+        "file-a",
+      ),
+      "file-c",
+    );
+
+  it.each([
+    {
+      beforeTabId: "file-a",
+      expected: [SIDEBAR_FIXED_INFO_TAB_ID, "file-c", "file-a", "file-b"],
+    },
+    {
+      beforeTabId: "file-b",
+      expected: [SIDEBAR_FIXED_INFO_TAB_ID, "file-a", "file-c", "file-b"],
+    },
+    {
+      beforeTabId: null,
+      expected: [SIDEBAR_FIXED_INFO_TAB_ID, "file-a", "file-b", "file-c"],
+    },
+    {
+      beforeTabId: "closed-tab",
+      expected: [SIDEBAR_FIXED_INFO_TAB_ID, "file-a", "file-b", "file-c"],
+    },
+  ])(
+    "inserts before $beforeTabId and keeps the fixed tab first",
+    ({ beforeTabId, expected }) => {
+      const state = twoGroups();
+      const [firstPane, secondPane] = listPanes(state.layout.root);
+      if (firstPane === undefined || secondPane === undefined) {
+        throw new Error("Expected two panes");
+      }
+      const moved = moveSidebarTab(
+        state,
+        secondPane.paneId,
+        "file-c",
+        { paneId: firstPane.paneId, zone: "center" },
+        { groupId: "unused" },
+        beforeTabId,
+      );
+      const group = getSidebarGroupForPane(moved, firstPane.paneId);
+      expect(group?.tabIds).toEqual(expected);
+      expect(group?.activeTabId).toBe("file-c");
+      expect(countPanes(moved.layout.root)).toBe(1);
+    },
+  );
+});
+
 describe("adjacentSidebarTab", () => {
   it("includes the new-tab control between pane groups without changing the selected tab", () => {
     const initial = createSidebarSplitState(["a", "b"], "a");

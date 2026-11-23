@@ -7,7 +7,10 @@ import {
 } from "@bb/domain";
 import { useSystemConfig } from "@/hooks/queries/system-queries";
 import { useBuiltinPluginIds, usePluginSlotKind } from "@/lib/plugin-slots";
-import { browserPlatform } from "@/lib/app-keybindings";
+import {
+  browserPlatform,
+  resolveEditorAppKeybindings,
+} from "@/lib/app-keybindings";
 import { getBbDesktopInfo } from "@/lib/bb-desktop";
 import { resolvePluginCommandDefaults } from "@/lib/plugin-command-keybindings";
 
@@ -50,16 +53,19 @@ export function usePluginCommandBindings() {
       bundledCommands,
     );
     const pluginIds = new Set(pluginDefaults.map((binding) => binding.command));
+    const pluginKeybindings = applyAppKeybindingOverrides(
+      resolved.defaults.filter((binding) => pluginIds.has(binding.command)),
+      overrides,
+    );
     return {
       ...resolved,
       commands: commandPaletteActions,
-      keybindings: [
-        ...(data?.keybindings ?? []),
-        ...applyAppKeybindingOverrides(
-          resolved.defaults.filter((binding) => pluginIds.has(binding.command)),
-          overrides,
-        ),
-      ],
+      editorKeybindings: resolveEditorAppKeybindings(
+        overrides,
+        platform,
+        pluginKeybindings,
+      ),
+      keybindings: [...(data?.keybindings ?? []), ...pluginKeybindings],
     };
   }, [
     builtInDefaults,

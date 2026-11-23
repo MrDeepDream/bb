@@ -250,8 +250,13 @@ experimental_Original }` — draws the sidebar navigation. Registration:
   `experimental_browserToolbarAction` are covered in frontend-registration.md;
   `experimental_threadHeaderRow` and `experimental_threadHeaderTitle` in
   frontend-thread-header-row.md.
-- `fileOpener` → `{ path: string, source, experimental_lineRange?, Original }` — register as a viewer/editor
-  for file extensions: `{ id, title, extensions: ["md"], component }`.
+- `fileOpener` → `{ path: string, source, experimental_lineRange?, experimental_column?, experimental_tabId?, Original }` — register as a viewer/editor
+  for file extensions: `{ id, title, extensions: ["md"], component, experimental_closeGuard? }`.
+  An editor that holds unsaved text registers `experimental_closeGuard`
+  (`subscribe`, `dirty()` as tab id to document key, `save(keys)`,
+  `discard(keys)`) from a store that outlives its component. BB then marks
+  dirty tabs and confirms before any tab, window, quit, reload, server switch,
+  or update drops that text.
   Matching files use the first applicable opener in deterministic slot order
   by default. Users can pin BB's preview or a specific opener per extension
   under Settings → "File openers", and
@@ -274,7 +279,9 @@ projectId, experimental_hostId? }` (nullable fields). The optional host ID
   object identity: each targeted open supplies a new object, including an
   identical range in the active tab. Apply the latest target after loading
   and on subsequent requests without replacing the editor model; null means
-  no requested navigation.
+  no requested navigation. `experimental_column` is the target's one-based
+  column, or null when it has none. It is not persisted, so a reloaded tab
+  receives null.
   `Original` is BB's preview bound to this file; render it to
   delegate conditionally without re-entering plugin replacement resolution.
   Applies only to live file content — git-ref snapshots and deleted files

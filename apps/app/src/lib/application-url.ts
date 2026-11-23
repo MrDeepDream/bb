@@ -13,6 +13,7 @@ import {
   type ApplicationUrlDecision,
 } from "@bb/domain/application-url";
 import { getBbDesktopInfo } from "./bb-desktop";
+import { requestPageUnload } from "./file-opener-close-guard";
 import { getNativeShell } from "./native-shell";
 import { appToast } from "@/components/ui/app-toast";
 
@@ -96,5 +97,5 @@ async function dispatchApplicationUrl(url: string): Promise<void> {
     await native.request("open-application", { url });
     return;
   }
-  window.location.assign(url);
+  requestPageUnload(() => window.location.assign(url));
 }

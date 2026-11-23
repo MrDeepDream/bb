@@ -36,3 +36,7 @@ export const BB_DESKTOP_SIGN_IN_TO_CONNECT_CHANNEL =
 
 export const BB_DESKTOP_SET_ATTENTION_THREADS_CHANNEL =
   "bb-desktop:set-attention-threads";
+export const BB_DESKTOP_SET_HAS_UNSAVED_EDITORS_CHANNEL =
+  "bb-desktop:set-has-unsaved-editors";
+export const BB_DESKTOP_CONFIRM_UNSAVED_EDITORS_UNLOAD_CHANNEL =
+  "bb-desktop:confirm-unsaved-editors-unload";

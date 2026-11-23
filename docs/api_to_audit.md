@@ -4532,6 +4532,70 @@ Docs: `frontend-core-slots.md`.
    reload restoration and cross-client range updates under the existing tab
    policy.
 
+## `PluginFileOpenerProps.experimental_column` (`@get-bb/plugin-sdk/app`)
+
+Passes the one-based column of the owning tab's latest targeted open to its
+opener, or `null` when that target has no column. The value lives in memory,
+keyed by the tab's line-range object, so it stays out of persisted and synced
+tab state and is gone after a reload.
+
+Core callers: `toFilePreviewLineRange` in
+`apps/app/src/lib/live-file-navigation.ts` records it and
+`FileOpenerTabContent` in `apps/app/src/components/plugin/PluginPanelActions.tsx`
+passes it. The Monaco file editor reads it.
+
+Docs: `frontend-core-slots.md`.
+
+**Audit before stabilizing.**
+
+1. Decide whether the column belongs inside a single target object with the
+   line range, replacing the separate prop.
+2. Verify clamping past end of line and tabs or wide characters with more
+   editor consumers.
+3. Verify older hosts omit the prop safely and older plugins ignore it.
+
+## `PluginFileOpenerProps.experimental_tabId` (`@get-bb/plugin-sdk/app`)
+
+Passes the id of the panel tab rendering the opener. Two views of one file have
+different ids, so an editor can keep a cursor and scroll position per view. It
+is the key of the map `experimental_closeGuard.dirty()` returns.
+
+Core caller: `FileOpenerTabContent`. Plugin caller: `plugins/monaco-editor`.
+
+Docs: `frontend-core-slots.md`.
+
+**Audit before stabilizing.**
+
+1. Verify the id stays the same across tab moves between split panes, remounts,
+   and server synchronization.
+2. Confirm older hosts omit it safely and older plugins ignore it.
+
+## `PluginFileOpenerRegistration.experimental_closeGuard` (`@get-bb/plugin-sdk/app`)
+
+An opener's unsaved-work guard: `subscribe(listener)`, `dirty()` (a map of tab
+id to document key), `save(documentKeys)`, and `discard(documentKeys)`. BB reads
+it from the registration, so it answers while no opener is mounted.
+
+Core owns the path: every file-tab close (the tab button, Close Others, Close to
+the Right, Close All, Ctrl+W) goes through one guarded close, which prompts only
+when a closing tab is the last view of a dirty document in its panel. The dialog
+offers Save, Discard, and Cancel. Core also marks dirty tabs and mirrors
+`hasDirty` to the Electron main process, which confirms window close, quit,
+reload, server switch, and update install.
+
+Core callers: `apps/app/src/lib/file-opener-close-guard.ts` and the secondary
+panel's tab close. Plugin caller: `plugins/monaco-editor`.
+
+Docs: `frontend-core-slots.md`.
+
+**Audit before stabilizing.**
+
+1. Verify every close path across split panes, compact drawers, and threads
+   that hold the same document.
+2. Decide whether a guard needs per-document labels in the dialog.
+3. Confirm a plugin generation swap keeps `dirty()` answering, and that a
+   throwing `save` is reported as a failed save.
+
 ## `bb.experimental_serverAccess.recheck`
 
 Sends a payload-less system `config-changed` notification to connected

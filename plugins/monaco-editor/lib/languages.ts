@@ -1,3 +1,5 @@
+import { experimental_getHostPathBasename as getHostPathBasename } from "@get-bb/plugin-sdk";
+
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   js: "javascript",
   jsx: "javascript",
@@ -96,16 +98,58 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   log: "plaintext",
 };
 
+const LANGUAGE_BY_DOTFILE: Record<string, string> = {
+  env: "shell",
+  envrc: "shell",
+  bashrc: "shell",
+  zshrc: "shell",
+  gitignore: "plaintext",
+  gitattributes: "plaintext",
+  gitmodules: "ini",
+  dockerignore: "plaintext",
+  npmignore: "plaintext",
+  eslintignore: "plaintext",
+  prettierignore: "plaintext",
+  editorconfig: "ini",
+  npmrc: "ini",
+  nvmrc: "plaintext",
+};
+
 const PREVIEW_RENDERED_EXTENSIONS = new Set(["md", "markdown", "html", "htm"]);
 
-export const CLAIMED_EXTENSIONS: readonly string[] = Object.keys(
-  LANGUAGE_BY_EXTENSION,
-).filter((extension) => !PREVIEW_RENDERED_EXTENSIONS.has(extension));
+export const CLAIMED_EXTENSIONS: readonly string[] = [
+  ...new Set([
+    ...Object.keys(LANGUAGE_BY_EXTENSION).filter(
+      (extension) => !PREVIEW_RENDERED_EXTENSIONS.has(extension),
+    ),
+    ...Object.keys(LANGUAGE_BY_DOTFILE),
+  ]),
+];
+
+function fileNameForPath(path: string): string {
+  return getHostPathBasename(path) ?? path.split("/").at(-1) ?? path;
+}
+
+function extensionOfName(name: string): string {
+  const dotIndex = name.lastIndexOf(".");
+  return dotIndex <= 0 ? "" : name.slice(dotIndex + 1).toLowerCase();
+}
+
+function dotfileLanguage(name: string): string | undefined {
+  if (!name.startsWith(".")) return undefined;
+  const dotfile = name.slice(1).toLowerCase();
+  return dotfile.startsWith("env.") ? "shell" : LANGUAGE_BY_DOTFILE[dotfile];
+}
+
+export function fileExtensionForPath(path: string): string {
+  return extensionOfName(fileNameForPath(path));
+}
 
 export function languageForPath(path: string): string {
-  const name = path.split("/").at(-1) ?? path;
-  const dotIndex = name.lastIndexOf(".");
-  if (dotIndex <= 0 || dotIndex === name.length - 1) return "plaintext";
-  const extension = name.slice(dotIndex + 1).toLowerCase();
-  return LANGUAGE_BY_EXTENSION[extension] ?? "plaintext";
+  const name = fileNameForPath(path);
+  return (
+    LANGUAGE_BY_EXTENSION[extensionOfName(name)] ??
+    dotfileLanguage(name) ??
+    "plaintext"
+  );
 }

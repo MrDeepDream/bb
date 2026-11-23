@@ -114,6 +114,8 @@ import {
   BB_DESKTOP_CLOSE_WINDOW_RESPONSE_CHANNEL,
   BB_DESKTOP_FOCUS_WINDOW_CHANNEL,
   BB_DESKTOP_SET_ATTENTION_THREADS_CHANNEL,
+  BB_DESKTOP_CONFIRM_UNSAVED_EDITORS_UNLOAD_CHANNEL,
+  BB_DESKTOP_SET_HAS_UNSAVED_EDITORS_CHANNEL,
   BB_DESKTOP_GET_WINDOW_STATE_CHANNEL,
   BB_DESKTOP_OPEN_NEW_TAB_CHANNEL,
   BB_DESKTOP_OPEN_DATA_DIRECTORY_CHANNEL,
@@ -498,6 +500,18 @@ const bbDesktopApi: BbDesktopApi = {
   },
   setAttentionThreads(threads) {
     ipcRenderer.send(BB_DESKTOP_SET_ATTENTION_THREADS_CHANNEL, threads);
+  },
+  setHasUnsavedEditors(hasUnsavedEditors) {
+    ipcRenderer.send(
+      BB_DESKTOP_SET_HAS_UNSAVED_EDITORS_CHANNEL,
+      hasUnsavedEditors,
+    );
+  },
+  async confirmUnsavedEditorsUnload() {
+    const approved: unknown = await ipcRenderer.invoke(
+      BB_DESKTOP_CONFIRM_UNSAVED_EDITORS_UNLOAD_CHANNEL,
+    );
+    return approved === true;
   },
   focusWindow() {
     ipcRenderer.send(BB_DESKTOP_FOCUS_WINDOW_CHANNEL);

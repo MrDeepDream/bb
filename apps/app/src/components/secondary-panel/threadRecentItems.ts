@@ -11,54 +11,66 @@ const THREAD_RECENT_ITEMS_STORAGE_VERSION = 1;
 const THREAD_RECENT_ITEMS_MAX_STORED = 24;
 export const THREAD_RECENT_ITEMS_VISIBLE_LIMIT = 6;
 
-type RecentItemSource = "workspace" | "thread-storage";
+type RecentItemTarget =
+  | { source: "workspace" | "thread-storage"; path: string }
+  | { source: "host"; hostId: string | null; path: string };
 
-export interface ThreadRecentItem {
-  source: RecentItemSource;
-  path: string;
-  openedAt: number;
-}
+export type ThreadRecentItem = RecentItemTarget & { openedAt: number };
 
-interface RecordRecentItemArgs {
+type RecordRecentItemArgs = RecentItemTarget & {
   items: readonly ThreadRecentItem[];
-  source: RecentItemSource;
-  path: string;
   openedAt: number;
   limit?: number;
-}
-
-interface RecordThreadRecentItemArgs {
-  source: RecentItemSource;
-  path: string;
-}
+};
 
 interface ThreadRecentItemsStorageKeyArgs {
   threadId: string;
 }
 
-const recentItemSchema = z
-  .object({
-    source: z.enum(["workspace", "thread-storage"]),
-    path: z.string().min(1),
-    openedAt: z.number().int().nonnegative(),
-  })
-  .strict();
+const recentItemSchema = z.union([
+  z
+    .object({
+      source: z.enum(["workspace", "thread-storage"]),
+      path: z.string().min(1),
+      openedAt: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z
+    .object({
+      source: z.literal("host"),
+      hostId: z.string().min(1).nullable(),
+      path: z.string().min(1),
+      openedAt: z.number().int().nonnegative(),
+    })
+    .strict(),
+]);
 
 const recentItemsSchema = z.array(recentItemSchema);
 
 const EMPTY_RECENT_ITEMS: readonly ThreadRecentItem[] = [];
 
+function isSameRecentTarget(
+  item: RecentItemTarget,
+  target: RecentItemTarget,
+): boolean {
+  if (item.source !== target.source || item.path !== target.path) return false;
+  return (
+    item.source !== "host" ||
+    target.source !== "host" ||
+    item.hostId === target.hostId
+  );
+}
+
 export function recordRecentItem({
   items,
-  source,
-  path,
   openedAt,
   limit = THREAD_RECENT_ITEMS_MAX_STORED,
+  ...target
 }: RecordRecentItemArgs): ThreadRecentItem[] {
   const withoutExisting = items.filter(
-    (item) => item.source !== source || item.path !== path,
+    (item) => !isSameRecentTarget(item, target),
   );
-  return [{ source, path, openedAt }, ...withoutExisting].slice(0, limit);
+  return [{ ...target, openedAt }, ...withoutExisting].slice(0, limit);
 }
 
 const recentItemsStorage = createLocalStorageSyncStorage<
@@ -117,15 +129,15 @@ export function useThreadRecentItems(
 
 export function useRecordThreadRecentItem(
   threadId: string | null | undefined,
-): (args: RecordThreadRecentItemArgs) => void {
+): (target: RecentItemTarget) => void {
   const setRecentItems = useSetAtom(getThreadRecentItemsAtom(threadId));
   return useCallback(
-    ({ source, path }: RecordThreadRecentItemArgs) => {
+    (target: RecentItemTarget) => {
       if (!hasThreadId(threadId)) {
         return;
       }
       setRecentItems((items) =>
-        recordRecentItem({ items, source, path, openedAt: Date.now() }),
+        recordRecentItem({ ...target, items, openedAt: Date.now() }),
       );
     },
     [setRecentItems, threadId],

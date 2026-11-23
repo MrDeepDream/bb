@@ -50,6 +50,39 @@ const REQUESTS: readonly {
   },
 ];
 
+describe("buildFileOpenerPanelTab title", () => {
+  it.each([
+    ["C:\\Users\\dev\\project\\src\\f04.ts", "f04.ts"],
+    ["C:/Users/dev/project/src/f04.ts", "f04.ts"],
+    ["\\\\server\\share\\src\\f04.ts", "f04.ts"],
+    ["/home/dev/project/f04.ts", "f04.ts"],
+    ["/home/dev/odd\\name.ts", "odd\\name.ts"],
+    ["src/f04.ts", "f04.ts"],
+    ["f04.ts", "f04.ts"],
+  ])("titles %s as %s", (path, title) => {
+    const tab = buildFileOpenerPanelTab(
+      MARKDOWN_OPENER,
+      {
+        path,
+        source: {
+          kind: "host",
+          environmentId: null,
+          projectId: null,
+          threadId: null,
+        },
+      },
+      {
+        kind: "host-file-preview",
+        environmentId: null,
+        hostId: "host_1",
+        tab: { lineRange: null, path },
+        threadId: null,
+      },
+    );
+    expect(tab.title).toBe(title);
+  });
+});
+
 describe("createFileOpenerTabForRequest thread-tabs contract", () => {
   it.each(REQUESTS.map(({ label, request }) => [label, request] as const))(
     "produces a %s tab the thread-tabs contract accepts",

@@ -62,6 +62,7 @@ import {
 import { z } from "zod";
 import { registerDesktopClipboardIpc } from "./desktop-clipboard.js";
 import { registerDesktopAttentionIpc } from "./desktop-attention.js";
+import { createDesktopUnloadGuard } from "./desktop-unload-guard.js";
 import { registerDesktopWindowFocusIpc } from "./desktop-window-focus.js";
 import {
   assertPathExists,
@@ -141,6 +142,7 @@ import {
 } from "./server-moved.js";
 import {
   BUILTIN_SERVER_NAME,
+  connectServersAdoptTarget,
   createServerTargetStore,
   SERVER_TARGET_FILE_NAME,
   type ConnectServerRef,
@@ -227,6 +229,8 @@ import {
   BB_DESKTOP_SET_SPLIT_NAVIGATION_ENABLED_CHANNEL,
   BB_DESKTOP_CLOSE_WINDOW_REQUEST_CHANNEL,
   BB_DESKTOP_CLOSE_WINDOW_RESPONSE_CHANNEL,
+  BB_DESKTOP_CONFIRM_UNSAVED_EDITORS_UNLOAD_CHANNEL,
+  BB_DESKTOP_SET_HAS_UNSAVED_EDITORS_CHANNEL,
   BB_DESKTOP_GET_WINDOW_STATE_CHANNEL,
   BB_DESKTOP_OPEN_NEW_TAB_CHANNEL,
   BB_DESKTOP_OPEN_DATA_DIRECTORY_CHANNEL,
@@ -626,6 +630,23 @@ function reloadApplicationWindow(
   browserWindow: BrowserWindow,
   ignoreCache: boolean,
 ): void {
+  if (!desktopUnloadGuard.hasDirtyWindow(browserWindow.webContents.id)) {
+    performApplicationWindowReload(browserWindow, ignoreCache);
+    return;
+  }
+  void desktopUnloadGuard
+    .confirmWindowUnload("reload", browserWindow)
+    .then((approved) => {
+      if (approved && !browserWindow.isDestroyed()) {
+        performApplicationWindowReload(browserWindow, ignoreCache);
+      }
+    });
+}
+
+function performApplicationWindowReload(
+  browserWindow: BrowserWindow,
+  ignoreCache: boolean,
+): void {
   desktopBrowserViewManager?.prepareWindowReload(browserWindow);
   if (
     windowCrashRecoveries.get(browserWindow.webContents.id)?.restoreCrashPage()
@@ -725,6 +746,83 @@ function createDesktopPathContext(): DesktopPathContext {
 }
 
 const pendingCloseWindowRequests = new Map<number, NodeJS.Timeout>();
+
+const desktopUnloadGuard = createDesktopUnloadGuard<BrowserWindow>({
+  logError(error) {
+    desktopLogger.error(
+      `[desktop] a held navigation failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  },
+  async prompt({ route, window }) {
+    const options = {
+      type: "warning" as const,
+      buttons: ["Keep editing", "Close, keep drafts"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: "Unsaved changes",
+      message:
+        route === "server"
+          ? "Switching servers closes files with unsaved changes."
+          : "Some files have unsaved changes.",
+      detail:
+        "Your drafts stay on this computer and come back when you reopen the files.",
+    };
+    const { response } =
+      window === null || window.isDestroyed()
+        ? await dialog.showMessageBox(options)
+        : await dialog.showMessageBox(window, options);
+    return response === 1;
+  },
+});
+
+function runServerNavigation(action: () => Promise<void>): Promise<boolean> {
+  return desktopUnloadGuard.runApprovedUnload(
+    "server",
+    getFocusedApplicationWindow(),
+    action,
+  );
+}
+
+function registerDesktopUnloadGuardIpc(): void {
+  const tracked = new Set<number>();
+  ipcMain.handle(BB_DESKTOP_CONFIRM_UNSAVED_EDITORS_UNLOAD_CHANNEL, (event) => {
+    const contents = event.sender;
+    const browserWindow = resolveApplicationWindow(contents);
+    if (
+      browserWindow === null ||
+      !applicationWindowWebContentsIds.has(contents.id) ||
+      event.senderFrame !== contents.mainFrame
+    ) {
+      return false;
+    }
+    return desktopUnloadGuard.confirmWindowUnload("reload", browserWindow);
+  });
+  ipcMain.on(BB_DESKTOP_SET_HAS_UNSAVED_EDITORS_CHANNEL, (event, payload) => {
+    const contents = event.sender;
+    if (
+      typeof payload !== "boolean" ||
+      !applicationWindowWebContentsIds.has(contents.id) ||
+      event.senderFrame !== contents.mainFrame
+    ) {
+      return;
+    }
+    const webContentsId = contents.id;
+    desktopUnloadGuard.setDirty(webContentsId, payload);
+    if (tracked.has(webContentsId)) return;
+    tracked.add(webContentsId);
+    contents.once("destroyed", () => {
+      tracked.delete(webContentsId);
+      desktopUnloadGuard.forget(webContentsId);
+    });
+    contents.on("render-process-gone", () => {
+      desktopUnloadGuard.setDirty(webContentsId, false);
+    });
+    contents.on("did-navigate", () => {
+      desktopUnloadGuard.setDirty(webContentsId, false);
+    });
+  });
+}
 
 function requestRendererWindowClose(browserWindow: BrowserWindow): void {
   const webContentsId = browserWindow.webContents.id;
@@ -1396,9 +1494,19 @@ async function adoptSavedConnectServers(): Promise<void> {
   if (serverTargetStore === null) {
     return;
   }
-  const switched = await serverTargetStore.adoptConnectServers(
-    listMenuConnectServers(),
-  );
+  const servers = listMenuConnectServers();
+  if (
+    desktopUnloadGuard.hasDirty() &&
+    connectServersAdoptTarget(serverTargetStore.getTarget(), servers)
+  ) {
+    desktopUnloadGuard.runWhenClean(
+      "connect-adoption",
+      adoptSavedConnectServers,
+    );
+    refreshApplicationMenu();
+    return;
+  }
+  const switched = await serverTargetStore.adoptConnectServers(servers);
   if (switched) {
     await applyServerTarget();
     return;
@@ -1661,6 +1769,15 @@ async function handleWatchedServerMove(move: DesktopServerMove): Promise<void> {
     stopServerMovedWatcher();
     return;
   }
+  const approved = await runServerNavigation(() => openWatchedServerMove(move));
+  if (!approved) {
+    desktopUnloadGuard.runWhenClean("server-move", () =>
+      handleWatchedServerMove(move),
+    );
+  }
+}
+
+async function openWatchedServerMove(move: DesktopServerMove): Promise<void> {
   try {
     await activateLocalServerMove(move);
   } catch (error) {
@@ -1737,19 +1854,21 @@ async function runStartupAction(
   }
   startupActionPending = true;
   try {
-    startupErrorPage = null;
-    await loadLoadingView();
-    if (
-      action === "open-moved-server" &&
-      localServerMove !== null &&
-      serverTargetStore !== null
-    ) {
-      await openServerMoveTarget({
-        move: localServerMove,
-        targetStore: serverTargetStore,
-      });
-    }
-    await applyServerTarget();
+    await runServerNavigation(async () => {
+      startupErrorPage = null;
+      await loadLoadingView();
+      if (
+        action === "open-moved-server" &&
+        localServerMove !== null &&
+        serverTargetStore !== null
+      ) {
+        await openServerMoveTarget({
+          move: localServerMove,
+          targetStore: serverTargetStore,
+        });
+      }
+      await applyServerTarget();
+    });
   } catch (error) {
     await loadStartupError({
       actions: [],
@@ -1813,7 +1932,7 @@ function openConnectSignIn(parentWindow: BrowserWindow | null): void {
       currentTarget?.kind === "connect" &&
       currentTarget.server.url === targetUrl
     ) {
-      void applyServerTarget();
+      void runServerNavigation(applyServerTarget);
     }
   };
   session.defaultSession.cookies.on("changed", onCookieChanged);
@@ -1842,22 +1961,25 @@ function openConnectSignIn(parentWindow: BrowserWindow | null): void {
 }
 
 async function selectBuiltinServer(): Promise<void> {
-  if (serverTargetStore === null) {
+  const store = serverTargetStore;
+  if (store === null) {
     return;
   }
-  const move = await readCommittedLocalServerMove();
-  if (move !== null) {
-    localServerMove = move;
-    await loadServerMovedView(move);
-    refreshApplicationMenu();
-    return;
-  }
-  const switched = await serverTargetStore.setTarget("builtin");
-  if (!switched) {
-    refreshApplicationMenu();
-    return;
-  }
-  await applyServerTarget();
+  await runServerNavigation(async () => {
+    const move = await readCommittedLocalServerMove();
+    if (move !== null) {
+      localServerMove = move;
+      await loadServerMovedView(move);
+      refreshApplicationMenu();
+      return;
+    }
+    const switched = await store.setTarget("builtin");
+    if (!switched) {
+      refreshApplicationMenu();
+      return;
+    }
+    await applyServerTarget();
+  });
 }
 
 async function loadServerMovedView(move: DesktopServerMove): Promise<void> {
@@ -2011,39 +2133,42 @@ async function loadRemoteServerTarget(
 }
 
 async function setActiveServerTarget(serverId: string): Promise<void> {
+  const store = serverTargetStore;
   if (
-    serverTargetStore === null ||
+    store === null ||
     !listServerChoices().some(
       (choice) => choice.id === serverId && !choice.active,
     )
   ) {
     return;
   }
-  if (serverId.startsWith("connect:")) {
-    const handle = serverId.slice("connect:".length);
-    const server = listMenuConnectServers().find(
-      (candidate) => candidate.handle === handle,
-    );
-    if (server === undefined) {
-      refreshApplicationMenu();
+  await runServerNavigation(async () => {
+    if (serverId.startsWith("connect:")) {
+      const handle = serverId.slice("connect:".length);
+      const server = listMenuConnectServers().find(
+        (candidate) => candidate.handle === handle,
+      );
+      if (server === undefined) {
+        refreshApplicationMenu();
+        return;
+      }
+      await store.setConnectServer(server);
+      await applyServerTarget();
       return;
     }
-    await serverTargetStore.setConnectServer(server);
-    await applyServerTarget();
-    return;
-  }
-  if (serverId.startsWith("custom:")) {
-    const url = serverTargetStore
-      .getCustomServerUrls()
-      .find((url) => customServerId(url) === serverId);
-    if (url === undefined) {
+    if (serverId.startsWith("custom:")) {
+      const url = store
+        .getCustomServerUrls()
+        .find((url) => customServerId(url) === serverId);
+      if (url === undefined) {
+        return;
+      }
+      await store.setCustomServerUrl(url);
+      await applyServerTarget();
       return;
     }
-    await serverTargetStore.setCustomServerUrl(url);
-    await applyServerTarget();
-    return;
-  }
-  if (serverId === "builtin") await selectBuiltinServer();
+    if (serverId === "builtin") await selectBuiltinServer();
+  });
 }
 
 async function openSetServerUrlDialog(add = false): Promise<void> {
@@ -2097,18 +2222,18 @@ async function openSetServerUrlDialog(add = false): Promise<void> {
     refreshApplicationMenu();
     return;
   }
-  await serverTargetStore.setCustomServerUrl(
-    result.kind === "set" ? result.url : null,
-    {
+  const store = serverTargetStore;
+  await runServerNavigation(async () => {
+    await store.setCustomServerUrl(result.kind === "set" ? result.url : null, {
       availableConnectServers: listMenuConnectServers(),
       ...(previousUrl === null ? {} : { replacedUrl: previousUrl }),
       ...(result.kind === "set" && !(add && result.name === null)
         ? { name: result.name }
         : {}),
-    },
-  );
-  await serverTargetStore.adoptConnectServers(listMenuConnectServers());
-  await applyServerTarget();
+    });
+    await store.adoptConnectServers(listMenuConnectServers());
+    await applyServerTarget();
+  });
 }
 
 function sendLogViewerSnapshot(args: SendLogViewerSnapshotArgs): void {
@@ -2246,11 +2371,14 @@ async function openDataDirectory(): Promise<void> {
 async function loadWindowUrl(args: LoadWindowUrlArgs): Promise<void> {
   startupErrorPage = null;
   currentWindowUrl = args.url;
-  if (desktopWindowFactory === null) {
+  const windowFactory = desktopWindowFactory;
+  if (windowFactory === null) {
     return;
   }
 
-  await desktopWindowFactory.loadUrl({ url: args.url });
+  await desktopUnloadGuard.navigate(() =>
+    windowFactory.loadUrl({ url: args.url }),
+  );
 }
 
 async function loadLoadingView(): Promise<void> {
@@ -2365,6 +2493,13 @@ async function stopOwnedRuntime(): Promise<void> {
 }
 
 function handleBeforeQuit(event: Event): void {
+  if (
+    !stoppingForQuit &&
+    desktopUnloadGuard.blockQuit(event, () => app.quit())
+  ) {
+    return;
+  }
+  desktopUnloadGuard.approveAll();
   quitting = true;
   if (stoppingForQuit) {
     return;
@@ -2429,8 +2564,22 @@ async function installDesktopUpdate(): Promise<void> {
   ) {
     throw new Error("This AppImage cannot be replaced in place.");
   }
-  await desktopWindowFactory?.persistOpenWindows();
-  await desktopAutoUpdateService.installUpdate();
+  if (
+    !(await desktopUnloadGuard.confirmAppUnload(
+      "update",
+      getFocusedApplicationWindow(),
+    ))
+  ) {
+    throw new Error("Update postponed: some files have unsaved changes.");
+  }
+  desktopUnloadGuard.approveAll();
+  try {
+    await desktopWindowFactory?.persistOpenWindows();
+    await desktopAutoUpdateService.installUpdate();
+  } catch (error) {
+    desktopUnloadGuard.clearApproval();
+    throw error;
+  }
 }
 
 function registerDesktopUpdateIpc(): void {
@@ -2450,6 +2599,7 @@ function registerDesktopUpdateIpc(): void {
   });
   registerDesktopWindowFocusIpc(applicationWindowWebContentsIds);
   registerDesktopAttentionIpc(applicationWindowWebContentsIds);
+  registerDesktopUnloadGuardIpc();
   registerDesktopClipboardIpc(applicationWindowWebContentsIds);
   ipcMain.on(BB_DESKTOP_ZOOM_COMMAND_CHANNEL, (event, payload: unknown) => {
     const parsed = bbDesktopZoomCommandSchema.safeParse(payload);
@@ -3037,9 +3187,11 @@ async function runDesktopApp(): Promise<void> {
     },
     processEvents: process,
     quitApplication() {
+      desktopUnloadGuard.approveAll();
       app.quit();
     },
     async stopOwnedRuntime() {
+      desktopUnloadGuard.approveAll();
       quitting = true;
       await stopOwnedRuntime();
     },
@@ -3506,6 +3658,12 @@ async function runDesktopApp(): Promise<void> {
     }),
     isQuitting() {
       return quitting;
+    },
+    blockWindowClose(event, browserWindow) {
+      return (
+        browserWindow instanceof BrowserWindow &&
+        desktopUnloadGuard.blockWindowClose(event, browserWindow)
+      );
     },
     openExternalUrl(openArgs) {
       void shell.openExternal(openArgs.url);

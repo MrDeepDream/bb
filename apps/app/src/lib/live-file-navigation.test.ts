@@ -3,6 +3,7 @@ import {
   normalizeExperimentalFileOpenOptions,
   normalizeExperimentalFilePreviewOptions,
   normalizeExperimentalLiveFileTarget,
+  getFilePreviewLineRangeColumn,
   toFilePreviewLineRange,
 } from "./live-file-navigation";
 
@@ -224,5 +225,25 @@ describe("normalizeExperimentalFileOpenOptions", () => {
     expect(
       toFilePreviewLineRange({ kind: "line", line: 42, column: 7 }),
     ).toEqual({ startLineNumber: 42, endLineNumber: 42 });
+  });
+
+  it("keeps the column with the range object that carries it", () => {
+    const range = toFilePreviewLineRange({
+      kind: "line",
+      line: 42,
+      column: 7,
+    });
+
+    expect(getFilePreviewLineRangeColumn(range)).toBe(7);
+    expect(
+      getFilePreviewLineRangeColumn(
+        toFilePreviewLineRange({ kind: "line", line: 42, column: null }),
+      ),
+    ).toBeNull();
+    expect(getFilePreviewLineRangeColumn(null)).toBeNull();
+    expect(JSON.parse(JSON.stringify(range))).toEqual({
+      startLineNumber: 42,
+      endLineNumber: 42,
+    });
   });
 });

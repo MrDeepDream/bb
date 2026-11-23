@@ -11,13 +11,58 @@ panel's file search, and `bb thread open`.
 - **Edit and save.** Tap the **Save** icon in the file bar, or press <kbd>⌘S</kbd>
   (<kbd>Ctrl+S</kbd> on Linux and Windows), to write the file. Edits stay
   unsaved until you save. If it changed on disk
-  since you opened it — often because the agent edited it — the save stops and
-  offers **Keep disk version** or **Save my edits**. After keeping the disk
-  version, **Undo** restores your discarded draft without writing to disk.
-  The conflict choices return so saving the draft still requires an explicit
-  decision. Undo stays available until you edit, save, reload, or leave the file.
+  since you opened it — often because the agent edited it — a clean tab
+  refreshes in place and keeps your cursor. A tab with unsaved edits offers
+  **Reload** or **Overwrite**, and a save never replaces a newer file silently.
+  After **Reload**, **Undo** restores your discarded draft without writing to
+  disk. The conflict choices return so saving the draft still requires an
+  explicit decision. Undo stays available until you edit, save, or reload again.
+- **Unsaved text is protected.** It survives tab switches, moving a tab between
+  panes, and plugin reloads. Drafts are also journaled to this browser's
+  IndexedDB and come back when you reopen the file, including after a crash.
+  Closing the last view of an unsaved file asks **Save**, **Discard**, or
+  **Cancel**. In the desktop app, closing the window, quitting, reloading,
+  switching server, or installing an update asks **Keep editing** or
+  **Close, keep drafts**.
+- **Tabs and splits.** A file opens in a preview tab that the next file reuses;
+  editing or pinning it keeps it. **Split Right** and **Split Down** open a
+  second view of the same document, sharing its text and undo history. The tab
+  menu also has **Close Others** and **Close All**.
+- **Write boundary.** Files inside the workspace or a project source are
+  editable. Other files on the host open read-only.
 - **Find in file** with <kbd>⌘F</kbd>, plus Monaco's usual editing: multiple
   cursors, block selection, bracket matching, code folding.
+- **Find in files** with <kbd>⌘⇧F</kbd> (<kbd>Ctrl+Shift+F</kbd> on Linux and
+  Windows) while the editor has focus, or _Monaco: find in files_ in the quick
+  palette. It searches the saved files of the active file's workspace or
+  project with `git grep`, honors `.gitignore`, and lists results by file as
+  they arrive. Enter or click jumps to the line and column, and
+  <kbd>Alt+←</kbd> returns. Literal or regex, optional case matching, Cancel,
+  and a notice when a limit stops the search. A host file outside every
+  workspace and project has no search root. `bb editor search` and the
+  `searchStart`, `searchNext`, and `searchCancel` RPCs run the same search; see
+  `skills/monaco-editor/SKILL.md`.
+- **Git gutter markers.** Files in a Git workspace or project show added,
+  changed, and removed lines against `HEAD` in the gutter: a solid bar, a
+  dashed bar, and a small wedge at the boundary of a removal. An untracked file
+  is all added. Markers describe the saved file. While you type they move with
+  the text, and they refresh after a save, a change on disk, a ref change in
+  the workspace, or when the window regains focus. Files outside a repository,
+  a repository with no commits, a project root inside a repository
+  subdirectory, and patches over 512 KiB show no markers. A patch is shown only
+  when its own header names the file. Only files visible in a pane are read,
+  through the Git plugin's `patchesByPath` RPC with up to 50 paths per call.
+  `bb git patch` prints the same data.
+- **JetBrains keys on Linux and Windows.** <kbd>Ctrl+D</kbd> duplicates,
+  <kbd>Ctrl+Y</kbd> deletes the line, <kbd>Ctrl+W</kbd> expands the selection,
+  <kbd>Alt+J</kbd> adds the next match, and <kbd>Alt+Shift+↑/↓</kbd> move lines.
+  <kbd>Ctrl+Shift+N</kbd> and <kbd>Ctrl+E</kbd> open file search with recent
+  files. macOS keeps Monaco's defaults.
+- **Back and forward.** <kbd>Alt+←/→</kbd> on Linux and Windows, or _Monaco: go
+  back / go forward_ in the quick palette, walk recent editor locations across
+  files and reopen a closed file.
+- **Breadcrumbs.** The file bar shows the active file's folders; each opens the
+  file tree. _Monaco: focus breadcrumbs_ reaches them from the keyboard.
 - **Syntax highlighting** for ~86 common file types.
 - **File tree.** Toggle it from the file bar to browse the project, filter by
   path, expand and collapse directories, and jump to another file. It opens
@@ -97,9 +142,6 @@ file link also offers a one-off "Open with…".
 - **Hidden files and `node_modules`** never appear in the tree. BB's path
   listing excludes them and offers no way to ask for them
   ([#2093](https://github.com/get-bb/bb/issues/2093)).
-- **Opening a file from the tree reuses the current tab,** so the tab title
-  keeps naming the file it was opened with. A plugin cannot ask BB to open a
-  file or retitle its tab ([#2102](https://github.com/get-bb/bb/issues/2102)).
 - **No "open in editor" button** like BB's preview has; that capability is not
   available to plugins.
 - **Thread-storage files on a remote machine** fail to open.

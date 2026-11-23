@@ -301,6 +301,7 @@ export default function gitPlugin(bb: BbPluginApi): void {
         );
         return results;
       },
+      patchesByPath: ({ target, paths }) => reads.patchesByPath(target, paths),
       fileSide: ({ environmentId, query }) =>
         reads.fileSide(environmentId, query),
       branches: ({ environmentId, query, limit, selectedBranch }) =>

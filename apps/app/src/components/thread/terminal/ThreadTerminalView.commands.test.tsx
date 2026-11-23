@@ -103,7 +103,11 @@ vi.mock("@/hooks/usePluginCommandBindings", () => {
     ),
   ];
   return {
-    usePluginCommandBindings: () => ({ keybindings: defaults, defaults }),
+    usePluginCommandBindings: () => ({
+      keybindings: defaults,
+      defaults,
+      editorKeybindings: [],
+    }),
   };
 });
 

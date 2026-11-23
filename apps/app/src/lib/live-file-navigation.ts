@@ -16,15 +16,27 @@ export function getExperimentalFileLocationStart(
   return { columnNumber: null, lineNumber: location.startLine };
 }
 
+const lineRangeColumns = new WeakMap<FilePreviewLineRange, number>();
+
 export function toFilePreviewLineRange(
   location: ExperimentalFileLocation | null,
 ): FilePreviewLineRange | null {
   if (location === null) return null;
-  return {
+  const lineRange = {
     startLineNumber:
       location.kind === "line" ? location.line : location.startLine,
     endLineNumber: location.kind === "line" ? location.line : location.endLine,
   };
+  if (location.kind === "line" && location.column !== null) {
+    lineRangeColumns.set(lineRange, location.column);
+  }
+  return lineRange;
+}
+
+export function getFilePreviewLineRangeColumn(
+  lineRange: FilePreviewLineRange | null | undefined,
+): number | null {
+  return lineRange == null ? null : (lineRangeColumns.get(lineRange) ?? null);
 }
 
 export function getFileBasename(path: string): string {

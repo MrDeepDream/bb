@@ -19,7 +19,7 @@ vi.mock("@/hooks/usePluginCommandBindings", () => {
     shortcut: { key, control: true, shift: true, mod: false, meta: false, alt: false },
     when: { all: ["mainSurface"], none: ["modalOpen"] },
   }));
-  return { usePluginCommandBindings: () => ({ keybindings: bindings, defaults: bindings }) };
+  return { usePluginCommandBindings: () => ({ keybindings: bindings, defaults: bindings, editorKeybindings: [] }) };
 });
 
 vi.mock("@/hooks/useFileSearchSuggestions", () => {

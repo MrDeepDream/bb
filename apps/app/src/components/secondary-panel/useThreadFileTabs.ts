@@ -5,6 +5,7 @@ import type {
 } from "@bb/server-contract";
 import {
   useFixedPanelTabsState,
+  useGetFixedPanelTabsState,
   useUpdateFixedPanelTabsState,
 } from "@/lib/fixed-panel-tabs";
 import {
@@ -31,10 +32,17 @@ import { usePluginSlotKind } from "@/lib/plugin-slots";
 import { allowBrowserViewRecreation } from "./browserViewVisibilityCoordinator";
 import { useFileOpenerPreferenceValue } from "@/lib/file-opener-preference";
 import {
+  buildFileOpenerPanelTab,
   createFileOpenerTabForRequest,
   fileOpenerIdFromActionId,
   parseFileOpenerParams,
 } from "@/components/plugin/file-opener-tabs";
+import {
+  addToFileTabCloseBatch,
+  isFileTabDirty,
+  requestFileTabsClose,
+} from "@/lib/file-opener-close-guard";
+import { getPanelTabChrome, setPanelPreviewTab } from "./panelTabChrome";
 import type { FileOpenerOverride } from "@/lib/plugin-slot-resolvers";
 import type { OpenPluginPanelArgs } from "@/components/plugin/PluginPanelActions";
 import type {
@@ -52,6 +60,7 @@ import {
   buildOrderedSecondaryPanelFileTabs,
   clearActiveSecondaryFileTabInState,
   closeSecondaryPanelTabInState,
+  closeSecondaryPanelTabsInState,
   findSecondaryPanelTab,
   getActiveSecondaryPanelTab,
   getActiveTabIdAfterPrune,
@@ -71,6 +80,7 @@ import {
   takeClosedPanelTab,
   type ClosedPanelContentTab,
 } from "./recentlyClosedPanelTabs";
+import { forgetRemovedTabPlacement } from "./removedTabPlacements";
 import { usePendingTerminalIds } from "@/components/thread/terminal/pending-terminals";
 import { pruneTerminalTabsInFixedPanelState } from "./terminalPanelTabs";
 
@@ -99,9 +109,16 @@ interface FileSearchThreadStorageSelection {
   path: string;
 }
 
+interface FileSearchHostSelection {
+  source: "host";
+  hostId: string | null;
+  path: string;
+}
+
 export type FileSearchSelection =
   | FileSearchWorkspaceSelection
-  | FileSearchThreadStorageSelection;
+  | FileSearchThreadStorageSelection
+  | FileSearchHostSelection;
 
 export interface UpdateBrowserTabArgs {
   tabId: string;
@@ -270,6 +287,13 @@ function openRequestForFileSearchSelection(
         source: { kind: "working-tree" },
         statusLabel: null,
       },
+    };
+  }
+  if (selection.source === "host") {
+    return {
+      kind: "host-file-preview",
+      ...(selection.hostId === null ? {} : { hostId: selection.hostId }),
+      tab: { lineRange: null, path: selection.path },
     };
   }
 
@@ -515,13 +539,51 @@ export function useThreadFileTabs({
       if (request.kind === "thread-storage-file-preview") {
         recordRecentItem({ source: "thread-storage", path: request.tab.path });
       }
+      if (request.kind === "host-file-preview") {
+        recordRecentItem({
+          source: "host",
+          hostId: request.hostId ?? null,
+          path: request.tab.path,
+        });
+      }
 
+      const opensPreview =
+        openerTab !== null &&
+        resolvedPanelStateId !== null &&
+        fileOpeners.some(
+          (opener) =>
+            opener.pluginId === openerTab.pluginId &&
+            opener.id === fileOpenerIdFromActionId(openerTab.actionId) &&
+            opener.experimental_closeGuard !== undefined,
+        );
+      const chrome = getPanelTabChrome(resolvedPanelStateId);
+      let isNewPreview = false;
       updateFixedPanelTabsState((state) => {
-        if (behavior === "replace-new-tab") {
-          return replaceNewTabWithSecondaryPanelTabInState({ state, tab });
+        const isExisting =
+          findSecondaryPanelTab(state.secondary.tabs, tab.id) !== null;
+        if (!isExisting) {
+          forgetRemovedTabPlacement(resolvedPanelStateId, tab.id);
         }
-        return openSecondaryPanelTabInState({ state, tab });
+        isNewPreview = opensPreview && !isExisting;
+        const replacedPreviewId = chrome.previewTabId;
+        const base =
+          isNewPreview &&
+          replacedPreviewId !== null &&
+          !chrome.pinnedTabIds.includes(replacedPreviewId) &&
+          !isFileTabDirty(replacedPreviewId)
+            ? closeSecondaryPanelTabInState(state, replacedPreviewId)
+            : state;
+        if (behavior === "replace-new-tab") {
+          return replaceNewTabWithSecondaryPanelTabInState({
+            state: base,
+            tab,
+          });
+        }
+        return openSecondaryPanelTabInState({ state: base, tab });
       });
+      if (isNewPreview && resolvedPanelStateId !== null) {
+        setPanelPreviewTab(resolvedPanelStateId, tab.id);
+      }
       return tab;
     },
     [
@@ -532,9 +594,51 @@ export function useThreadFileTabs({
       projectId,
       resolvedEnvironmentId,
       resolvedFileOwnerThreadId,
+      resolvedPanelStateId,
       recentlyClosedPanelContextKey,
       updateFixedPanelTabsState,
     ],
+  );
+
+  const openFileTabView = useCallback(
+    (tabId: string): string | null => {
+      let viewTabId: string | null = null;
+      updateFixedPanelTabsState((state) => {
+        const tab = findSecondaryPanelTab(state.secondary.tabs, tabId);
+        if (tab?.kind !== "plugin-panel" || !tab.fileOpenerOwner) return state;
+        const openerId = fileOpenerIdFromActionId(tab.actionId);
+        const file = parseFileOpenerParams(tab.paramsJson);
+        if (openerId === null || file === null) return state;
+        const openTabIds = new Set(state.secondary.tabs.map(({ id }) => id));
+        const opener = { id: openerId, pluginId: tab.pluginId };
+        let view = 2;
+        let clone = buildFileOpenerPanelTab(
+          opener,
+          file,
+          tab.fileOpenerOwner,
+          view,
+        );
+        while (openTabIds.has(clone.id)) {
+          view += 1;
+          clone = buildFileOpenerPanelTab(
+            opener,
+            file,
+            tab.fileOpenerOwner,
+            view,
+          );
+        }
+        viewTabId = clone.id;
+        forgetRemovedTabPlacement(resolvedPanelStateId, clone.id);
+        return openSecondaryPanelTabInState({ state, tab: clone });
+      });
+      if (viewTabId !== null && resolvedPanelStateId !== null) {
+        if (getPanelTabChrome(resolvedPanelStateId).previewTabId === tabId) {
+          setPanelPreviewTab(resolvedPanelStateId, null);
+        }
+      }
+      return viewTabId;
+    },
+    [resolvedPanelStateId, updateFixedPanelTabsState],
   );
 
   const openTab = useCallback(
@@ -560,34 +664,64 @@ export function useThreadFileTabs({
     [updateFixedPanelTabsState],
   );
 
+  const getFixedPanelTabsState = useGetFixedPanelTabsState(panelStateId);
+
+  const closeTabs = useCallback(
+    (tabIds: readonly string[], options?: { remember: boolean }) => {
+      requestFileTabsClose({
+        tabIds,
+        panelTabIds: getFixedPanelTabsState().secondary.tabs.map(
+          (tab) => tab.id,
+        ),
+        perform: () => {
+          let didCloseLastTab = false;
+          updateFixedPanelTabsState((state) => {
+            const next = closeSecondaryPanelTabsInState(state, tabIds);
+            didCloseLastTab =
+              next !== state && next.secondary.tabs.length === 0;
+            if (
+              next !== state &&
+              recentlyClosedPanelContextKey !== null &&
+              options?.remember !== false
+            ) {
+              const closing = new Set(tabIds);
+              state.secondary.tabs.forEach((tab, index) => {
+                if (closing.has(tab.id) && isReopenableSecondaryPanelTab(tab)) {
+                  rememberClosedPanelTab(recentlyClosedPanelContextKey, {
+                    kind: "content",
+                    index,
+                    tab,
+                  });
+                }
+              });
+            }
+            return next;
+          });
+          if (didCloseLastTab) onCloseLastTab?.();
+        },
+      });
+    },
+    [
+      getFixedPanelTabsState,
+      onCloseLastTab,
+      recentlyClosedPanelContextKey,
+      updateFixedPanelTabsState,
+    ],
+  );
+
   const closeTab = useCallback(
     (tabId: string, options?: { remember: boolean }) => {
-      let didCloseLastTab = false;
-      updateFixedPanelTabsState((state) => {
-        const tabIndex = state.secondary.tabs.findIndex(
-          (tab) => tab.id === tabId,
-        );
-        const tab = state.secondary.tabs[tabIndex];
-        const next = closeSecondaryPanelTabInState(state, tabId);
-        didCloseLastTab = next !== state && next.secondary.tabs.length === 0;
-        if (
-          next !== state &&
-          recentlyClosedPanelContextKey !== null &&
-          tab !== undefined &&
-          isReopenableSecondaryPanelTab(tab) &&
-          options?.remember !== false
-        ) {
-          rememberClosedPanelTab(recentlyClosedPanelContextKey, {
-            kind: "content",
-            index: tabIndex,
-            tab,
-          });
-        }
-        return next;
-      });
-      if (didCloseLastTab) onCloseLastTab?.();
+      if (options === undefined && addToFileTabCloseBatch(closeTabs, tabId)) {
+        return;
+      }
+      closeTabs([tabId], options);
     },
-    [onCloseLastTab, recentlyClosedPanelContextKey, updateFixedPanelTabsState],
+    [closeTabs],
+  );
+
+  const closeTabNow = useCallback(
+    (tabId: string) => closeTabs([tabId]),
+    [closeTabs],
   );
 
   const reopenClosedTab = useCallback((): boolean => {
@@ -617,6 +751,9 @@ export function useThreadFileTabs({
       }
       updateFixedPanelTabsState((state) => {
         const existing = findSecondaryPanelTab(state.secondary.tabs, tab.id);
+        if (existing === null) {
+          forgetRemovedTabPlacement(resolvedPanelStateId, tab.id);
+        }
         return replaceNewTabWithSecondaryPanelTabInState({
           state,
           tab: existing ?? tab,
@@ -624,7 +761,11 @@ export function useThreadFileTabs({
       });
       return tab;
     },
-    [recentlyClosedPanelContextKey, updateFixedPanelTabsState],
+    [
+      recentlyClosedPanelContextKey,
+      resolvedPanelStateId,
+      updateFixedPanelTabsState,
+    ],
   );
 
   const openPluginPanel = useCallback(
@@ -653,10 +794,15 @@ export function useThreadFileTabs({
             tab: existing,
           });
         }
+        forgetRemovedTabPlacement(resolvedPanelStateId, tab.id);
         return replaceNewTabWithSecondaryPanelTabInState({ state, tab });
       });
     },
-    [recentlyClosedPanelContextKey, updateFixedPanelTabsState],
+    [
+      recentlyClosedPanelContextKey,
+      resolvedPanelStateId,
+      updateFixedPanelTabsState,
+    ],
   );
 
   const selectFileSearchResult = useCallback(
@@ -767,6 +913,8 @@ export function useThreadFileTabs({
     browserTabs,
     clearActiveFileTabs,
     closeTab,
+    closeTabNow,
+    openFileTabView,
     openPluginDetail,
     openPluginPanel,
     openTab,

@@ -7,6 +7,7 @@ import {
   type RefObject,
   useCallback,
   useContext,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -46,7 +47,15 @@ import {
 } from "./panelToggleControlState";
 import { SecondaryPanelHostLayoutContext } from "./SecondaryPanelHostLayoutContext";
 import { MobilePanelTabPager } from "./MobilePanelTabPager";
-import { SecondaryPanelTabStrip } from "./SecondaryPanelTabStrip";
+import {
+  secondaryPanelTabDomId,
+  SecondaryPanelTabStrip,
+} from "./SecondaryPanelTabStrip";
+import {
+  setPanelPreviewTab,
+  setPanelTabPinned,
+  usePanelTabChrome,
+} from "./panelTabChrome";
 import { ImageTabLightboxProvider } from "./ImageTabLightboxContext";
 import { FilePreviewScrollPositionContext } from "./filePreviewScrollPositionContext";
 import type {
@@ -93,6 +102,7 @@ import type { SplitSide } from "@/lib/split-layout";
 import { PaneArrangementButton } from "@/views/thread-detail/PaneMaximizeButton";
 import {
   SidebarSplitContainer,
+  type SidebarPendingTabMove,
   type SidebarSplitPaneRenderArgs,
   type SidebarSplitTabDescriptor,
 } from "./SidebarSplitContainer";
@@ -204,6 +214,7 @@ export interface ThreadSecondaryPanelProps {
   onCollapse: () => void;
   onClose: () => void;
   onOpenNewTab: () => void;
+  onOpenFileTabView?: (tabId: string) => string | null;
   workspaceRootPath?: string | null;
   onOpenFileInEditor?: (path: string) => void;
   onOpenFilePreview?: (path: string) => void;
@@ -241,7 +252,7 @@ function ThreadSecondaryPanelContent({
   canNavigateTabs = true,
   areFixedTabsReady = true,
   environmentId,
-  tabs,
+  tabs: providedTabs,
   fixedTabs,
   onTabReorder,
   renderBrowserDeck,
@@ -256,6 +267,7 @@ function ThreadSecondaryPanelContent({
   onCollapse,
   onClose,
   onOpenNewTab,
+  onOpenFileTabView,
   workspaceRootPath,
   onOpenFileInEditor,
   onOpenFilePreview,
@@ -273,10 +285,61 @@ function ThreadSecondaryPanelContent({
   const fullScreenShortcut = showFullScreenShortcut
     ? boundFullScreenShortcut
     : null;
+  const tabChrome = usePanelTabChrome(splitPanelStateId ?? null);
+  const [pendingTabMove, setPendingTabMove] =
+    useState<SidebarPendingTabMove | null>(null);
+  const clearPendingTabMove = useCallback(() => setPendingTabMove(null), []);
+  const tabs = useMemo<readonly SecondaryPanelRenderableTab[]>(() => {
+    if (splitPanelStateId === undefined) return providedTabs;
+    const pinnedTabIds = new Set(tabChrome.pinnedTabIds);
+    return providedTabs.map((tab) => {
+      if (tab.tab.kind !== "plugin-panel" || !tab.tab.fileOpenerOwner) {
+        return tab;
+      }
+      const tabId = tab.tab.id;
+      const isPinned = pinnedTabIds.has(tabId);
+      const isPreview = tabChrome.previewTabId === tabId;
+      return {
+        ...tab,
+        isPinned,
+        isPreview,
+        onTogglePin: () =>
+          setPanelTabPinned(splitPanelStateId, tabId, !isPinned),
+        ...(isPreview
+          ? { onKeepOpen: () => setPanelPreviewTab(splitPanelStateId, null) }
+          : {}),
+        ...(onOpenFileTabView !== undefined && !renderAsDrawer
+          ? {
+              onSplit: (side: "right" | "bottom") => {
+                const viewTabId = onOpenFileTabView(tabId);
+                if (viewTabId !== null) {
+                  setPendingTabMove({
+                    anchorTabId: tabId,
+                    tabId: viewTabId,
+                    side,
+                  });
+                }
+              },
+            }
+          : {}),
+      };
+    });
+  }, [
+    onOpenFileTabView,
+    providedTabs,
+    renderAsDrawer,
+    splitPanelStateId,
+    tabChrome,
+  ]);
   const visibleTabs = useMemo(
     () => tabs.filter((tab) => tab.isHidden !== true),
     [tabs],
   );
+  const tabsById = useMemo(
+    () => new Map(tabs.map((tab) => [tab.tab.id, tab])),
+    [tabs],
+  );
+  const tabPanelBaseId = useId();
   const [instanceScrollPositions] = useState<FilePreviewScrollPositions>(
     () => new Map(),
   );
@@ -427,6 +490,7 @@ function ThreadSecondaryPanelContent({
     onSurfaceTabReorder: SecondaryPanelTabReorderHandler;
     reserveNewTabButton: boolean;
     showNewTabButton: boolean;
+    tabPanelId: string;
   }
 
   const renderHidePanelButton = () => (
@@ -549,6 +613,7 @@ function ThreadSecondaryPanelContent({
     onSurfaceTabReorder,
     reserveNewTabButton,
     showNewTabButton: showGroupNewTabButton,
+    tabPanelId,
   }: PanelTabGroupArgs) => {
     const activeSurfaceTab = surfaceTabs.find(
       (tab) => tab.tab.id === activeSurfaceTabId,
@@ -634,6 +699,7 @@ function ThreadSecondaryPanelContent({
             onReorderTab={onSurfaceTabReorder}
             usesDesktopChrome={usesDesktopChrome}
             isPanelOpen={isOpen}
+            tabPanelId={tabPanelId}
           />
         ) : null}
         {newTabControl}
@@ -700,6 +766,21 @@ function ThreadSecondaryPanelContent({
       activeSurfaceFixedTab?.contentFillsRegion === true;
     const isSurfaceTerminalActive =
       activeSurfaceModel?.kind === "terminal" && hasActiveSurfaceTab;
+    const tabPanelId = `${tabPanelBaseId}-${paneId ?? "panel"}`;
+    const activeVisibleTabIndex = surfaceTabs
+      .filter((tab) => tab.isHidden !== true)
+      .findIndex((tab) => tab.tab.id === activeSurfaceTabId);
+    const tabPanelProps =
+      renderAsDrawer || activeVisibleTabIndex === -1
+        ? {}
+        : {
+            id: tabPanelId,
+            role: "tabpanel" as const,
+            "aria-labelledby": secondaryPanelTabDomId(
+              tabPanelId,
+              activeVisibleTabIndex,
+            ),
+          };
 
     return (
       <ImageTabLightboxProvider
@@ -756,6 +837,7 @@ function ThreadSecondaryPanelContent({
                 onSurfaceTabReorder,
                 reserveNewTabButton: reserveNewTabControl,
                 showNewTabButton: showNewTabControl,
+                tabPanelId,
               })}
             </div>
             {showOuterControls ||
@@ -795,6 +877,7 @@ function ThreadSecondaryPanelContent({
               <SecondaryPanelContentSkeleton />
             ) : hasActiveSurfaceTab ? (
               <div
+                {...tabPanelProps}
                 className={
                   isSurfaceTerminalActive || surfaceContentFillsRegion
                     ? "min-h-0 flex-1 overflow-hidden"
@@ -860,13 +943,12 @@ function ThreadSecondaryPanelContent({
     fixedTabs[0]?.tab.id ??
     SIDEBAR_FIXED_INFO_TAB_ID;
   const resolveSplitPaneTabs = (pane: SidebarSplitPaneRenderArgs) =>
-    pane.group.tabIds
-      .map((tabId) => tabs.find((tab) => tab.tab.id === tabId))
-      .filter((tab): tab is SecondaryPanelRenderableTab => tab !== undefined)
-      .map((tab) => ({
-        ...tab,
-        onSelect: () => pane.onSelectTab(tab.tab.id),
-      }));
+    pane.group.tabIds.flatMap((tabId) => {
+      const tab = tabsById.get(tabId);
+      return tab === undefined
+        ? []
+        : [{ ...tab, onSelect: () => pane.onSelectTab(tabId) }];
+    });
   const panelSurface = shouldEnableSidebarSplits ? (
     <SidebarSplitContainer
       key={splitPanelStateId}
@@ -879,7 +961,7 @@ function ThreadSecondaryPanelContent({
         window.requestAnimationFrame(() => {
           const control = isNewTabButton
             ? "button[data-panel-new-tab]"
-            : 'button[aria-pressed="true"]';
+            : 'button[aria-pressed="true"], [role="tab"][aria-selected="true"]';
           panelRef.current
             ?.querySelector<HTMLElement>(
               `[data-sidebar-split-tab-group="${CSS.escape(paneId)}"] ${control}`,
@@ -898,6 +980,8 @@ function ThreadSecondaryPanelContent({
       onGlobalTabReorder={onTabReorder}
       onToggleFullScreen={onToggleConversationCollapse}
       panelStateId={splitPanelStateId}
+      onPendingTabMoveDone={clearPendingTabMove}
+      pendingTabMove={pendingTabMove}
       tabs={splitTabs}
       renderPane={(pane: SidebarSplitPaneRenderArgs) => {
         const activePaneTabId = pane.group.activeTabId;

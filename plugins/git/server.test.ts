@@ -403,6 +403,159 @@ describe("Git plugin server", () => {
     ]);
   });
 
+  describe("patchesByPath", () => {
+    function patchesByPathHost(
+      onCall: (call: ExperimentalFakeHostRpcCall) => unknown = hostResult,
+      checkoutKind: "branch" | "unborn" = "branch",
+    ) {
+      const fake = createFakePluginHost({
+        pluginId: "bb--git",
+        sdk: {
+          subscribe: () => () => {},
+          environments: { get: async () => environment() },
+          projects: {
+            get: async () => ({
+              id: "project-1",
+              sources: [
+                { hostId: "host-1", path: "/work/one", isDefault: true },
+                { hostId: "host-2", path: "/work/two", isDefault: false },
+              ],
+            }),
+          },
+        },
+        experimental_callHostRpc: (call) =>
+          call.method === "status"
+            ? {
+                outcome: "available",
+                value: makeWorkspaceStatus({
+                  checkout:
+                    checkoutKind === "unborn"
+                      ? { kind: "unborn", branchName: "main" }
+                      : { kind: "branch", branchName: "main", headSha: "abc" },
+                }),
+              }
+            : onCall(call),
+      });
+      plugin(fake.bb);
+      return fake;
+    }
+
+    function patchCalls(fake: ReturnType<typeof patchesByPathHost>) {
+      return fake.harness.experimental_hostRpcCalls.filter(
+        (call) => call.method === "patches",
+      );
+    }
+
+    it.each([
+      ["an environment", { environmentId: "env-1" }, "host-1", "/work/env-1"],
+      [
+        "a project checkout on its host",
+        { projectId: "project-1", hostId: "host-2" },
+        "host-2",
+        "/work/two",
+      ],
+    ])("resolves %s on the server", async (_name, target, hostId, path) => {
+      const fake = patchesByPathHost();
+      await expect(
+        fake.harness.callRpc("patchesByPath", { target, paths: ["a.ts"] }),
+      ).resolves.toEqual({
+        outcome: "available",
+        rootPath: path,
+        patches: [{ path: "a.ts", patch: "patch a.ts", truncated: false }],
+        deferred: [],
+      });
+      expect(patchCalls(fake)).toMatchObject([
+        {
+          hostId,
+          input: { path, target: { type: "uncommitted" }, paths: ["a.ts"] },
+        },
+      ]);
+    });
+
+    it("refuses a project with no checkout on the host", async () => {
+      const fake = patchesByPathHost();
+      await expect(
+        fake.harness.callRpc("patchesByPath", {
+          target: { projectId: "project-1", hostId: "elsewhere" },
+          paths: ["a.ts"],
+        }),
+      ).rejects.toMatchObject({ code: "not_found" });
+      expect(patchCalls(fake)).toHaveLength(0);
+    });
+
+    it.each([
+      ["a raw root field", { path: "/etc" }, ["a.ts"]],
+      ["a parent traversal", { environmentId: "env-1" }, ["../a.ts"]],
+      ["an absolute path", { environmentId: "env-1" }, ["/etc/hosts"]],
+      ["a drive path", { environmentId: "env-1" }, ["C:\\secret.txt"]],
+      ["pathspec magic", { environmentId: "env-1" }, [":(top)a.ts"]],
+    ])("rejects %s", async (_name, target, paths) => {
+      const fake = patchesByPathHost();
+      await expect(
+        fake.harness.callRpc("patchesByPath", { target, paths }),
+      ).rejects.toBeDefined();
+      expect(fake.harness.experimental_hostRpcCalls).toHaveLength(0);
+    });
+
+    it("follows deferred paths with one freshness token per call", async () => {
+      const fake = patchesByPathHost((call) => {
+        const [first, ...rest] = (call.input as { paths: string[] }).paths;
+        return {
+          outcome: "available",
+          value: {
+            patches: [{ path: first, patch: `p ${first}`, truncated: false }],
+            deferred: rest,
+          },
+        };
+      });
+      const target = { projectId: "project-1", hostId: "host-1" };
+      const paths = ["a.ts", "b.ts", "c.ts"];
+      const result = (await fake.harness.callRpc("patchesByPath", {
+        target,
+        paths,
+      })) as { patches: { path: string }[]; deferred: string[] };
+      expect(result.patches.map(({ path }) => path)).toEqual(paths);
+      expect(result.deferred).toEqual([]);
+      const first = patchCalls(fake).map(
+        (call) => (call.input as { freshness: unknown }).freshness,
+      );
+      expect(first).toHaveLength(3);
+      expect(new Set(first.map((token) => JSON.stringify(token))).size).toBe(1);
+      await fake.harness.callRpc("patchesByPath", { target, paths: ["a.ts"] });
+      const next = patchCalls(fake).at(-1)?.input as { freshness: unknown };
+      expect(JSON.stringify(next.freshness)).not.toBe(JSON.stringify(first[0]));
+    });
+
+    it("reports paths the host left deferred", async () => {
+      const fake = patchesByPathHost(() => ({
+        outcome: "available",
+        value: { patches: [], deferred: ["a.ts"] },
+      }));
+      await expect(
+        fake.harness.callRpc("patchesByPath", {
+          target: { environmentId: "env-1" },
+          paths: ["a.ts"],
+        }),
+      ).resolves.toEqual({
+        outcome: "available",
+        rootPath: "/work/env-1",
+        patches: [],
+        deferred: ["a.ts"],
+      });
+    });
+
+    it("returns unavailable for an unborn HEAD without reading patches", async () => {
+      const fake = patchesByPathHost(hostResult, "unborn");
+      await expect(
+        fake.harness.callRpc("patchesByPath", {
+          target: { environmentId: "env-1" },
+          paths: ["a.ts"],
+        }),
+      ).resolves.toMatchObject({ outcome: "unavailable" });
+      expect(patchCalls(fake)).toHaveLength(0);
+    });
+  });
+
   it("returns core's file read failure codes for a file side", async () => {
     const { fake } = await setup({ "env-1": environment() });
     await expect(

@@ -420,6 +420,29 @@ function getActiveTabIdAfterClose({
   return nextActiveTab?.id ?? null;
 }
 
+export function closeSecondaryPanelTabsInState(
+  state: FixedPanelTabsState,
+  tabIds: readonly string[],
+): FixedPanelTabsState {
+  const closing = new Set(tabIds);
+  const activeTabId = state.secondary.activeTabId;
+  const tabs = state.secondary.tabs.filter(
+    (tab) => tab.id === activeTabId || !closing.has(tab.id),
+  );
+  const withoutInactive =
+    tabs.length === state.secondary.tabs.length
+      ? state
+      : setSecondaryPanelTabsInState({
+          activeTabId,
+          isOpen: state.secondary.isOpen,
+          state,
+          tabs,
+        });
+  return activeTabId !== null && closing.has(activeTabId)
+    ? closeSecondaryPanelTabInState(withoutInactive, activeTabId)
+    : withoutInactive;
+}
+
 export function closeSecondaryPanelTabInState(
   state: FixedPanelTabsState,
   tabId: string,

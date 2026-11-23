@@ -1,4 +1,6 @@
+import { getHostPathBasename, getHostPathDirname } from "@bb/domain";
 import type { IconName } from "@bb/shared-ui/icon";
+import { directoryFromPath } from "@bb/thread-view";
 
 interface GetFileNameFromPathArgs {
   path: string;
@@ -14,7 +16,15 @@ interface GetFileExtensionArgs {
 }
 
 export function getFileNameFromPath({ path }: GetFileNameFromPathArgs): string {
-  return path.slice(path.lastIndexOf("/") + 1) || path;
+  return (
+    getHostPathBasename(path) || path.slice(path.lastIndexOf("/") + 1) || path
+  );
+}
+
+export function getDirectoryFromPath({
+  path,
+}: GetFileNameFromPathArgs): string {
+  return getHostPathDirname(path) ?? directoryFromPath(path);
 }
 
 function getFileExtension({ path }: GetFileExtensionArgs): string {

@@ -649,12 +649,47 @@ export interface PluginFileOpenerProps {
     endLineNumber: number;
   } | null;
   /**
+   * One-based column of the latest single-line target, or null when the open
+   * named no column. Changes together with `experimental_lineRange` and is not
+   * restored after a reload. Older hosts omit it.
+   *
+   * @experimental Audit column clamping and multi-cursor targets before stabilizing.
+   */
+  experimental_column?: number | null;
+  /**
+   * Id of the panel tab rendering this opener. A second view of the same file
+   * has its own id. `experimental_closeGuard.dirty()` keys its map by this id.
+   * Older hosts omit it.
+   *
+   * @experimental Audit before relying on this as a stable contract.
+   */
+  experimental_tabId?: string;
+  /**
    * BB's file preview, bound to this file. Render it to delegate conditionally
    * without re-entering plugin replacement resolution.
    *
    * @experimental Audit before relying on this as a stable contract.
    */
   Original: ComponentType;
+}
+
+/**
+ * Unsaved-work guard an editor registers with its `fileOpener`. It reads from
+ * the plugin's document store, so it answers while no opener is mounted. BB
+ * owns the confirmation dialog, the tab's dirty marker, the desktop window
+ * mirror, and the check for whether a closing tab is a document's last view.
+ *
+ * @experimental Audit before relying on this as a stable contract.
+ */
+export interface ExperimentalFileOpenerCloseGuard {
+  /** Call `listener` whenever `dirty()` may have changed. Returns unsubscribe. */
+  subscribe(listener: () => void): () => void;
+  /** Dirty panel tabs, as a map of tab id to the plugin's document key. */
+  dirty(): ReadonlyMap<string, string>;
+  /** Save the documents. Resolves false when any of them did not save. */
+  save(documentKeys: readonly string[]): Promise<boolean>;
+  /** Drop the unsaved text of the documents. */
+  discard(documentKeys: readonly string[]): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -2822,12 +2857,21 @@ export interface PluginFileOpenerRegistration {
   title: string;
   /**
    * Lowercase alphanumeric extensions without the dot; single underscores or
-   * hyphens may separate segments. An empty list registers an opener that no
-   * extension selects and the "Open with" menu does not offer; it shows a file
-   * only when the plugin names it in `experimental_openFilePreview`.
+   * hyphens may separate segments. A leading-dot file name also matches by its
+   * stem: `.env` and `.env.local` match `env` unless a plugin claims the last
+   * suffix. An empty list registers an opener that no extension selects and
+   * the "Open with" menu does not offer; it shows a file only when the plugin
+   * names it in `experimental_openFilePreview`.
    */
   extensions: readonly string[];
   component: ComponentType<PluginFileOpenerProps>;
+  /**
+   * Makes every tab close path, window close, quit, and reload confirm before
+   * unsaved text is dropped. Register it from a store that outlives the opener.
+   *
+   * @experimental Audit before relying on this as a stable contract.
+   */
+  experimental_closeGuard?: ExperimentalFileOpenerCloseGuard;
 }
 
 /**

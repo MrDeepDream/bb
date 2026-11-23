@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import type { ProjectSource } from "@bb/domain";
 import type { ProjectWithThreadsResponse } from "@bb/server-contract";
 import {
@@ -14,6 +20,11 @@ import {
 } from "vitest";
 import { appToast } from "@/components/ui/app-toast";
 import { sidebarNavigationQueryKey } from "@/hooks/queries/query-keys";
+import {
+  createAppPanelController,
+  UNAVAILABLE_APP_PANEL_CONTROLLER,
+  type AppPanelController,
+} from "@/lib/app-fixed-tab-navigation";
 import { sdk } from "@/lib/sdk";
 import {
   makeProjectWithThreadsResponse,
@@ -27,6 +38,7 @@ const OTHER_HOST_ID = "host_other";
 
 interface FakeNavigationSurface {
   openFilePreview: (intent: unknown) => boolean;
+  panel: AppPanelController;
 }
 
 const navigation = vi.hoisted(
@@ -168,7 +180,10 @@ describe("ProjectsRegion", () => {
     { state: "a surface that opens the file", opens: true, toasts: [] },
   ])("handles a file row with $state", async ({ opens, toasts }) => {
     const openFilePreview = vi.fn(() => opens === true);
-    navigation.surface = opens === null ? null : { openFilePreview };
+    navigation.surface =
+      opens === null
+        ? null
+        : { openFilePreview, panel: UNAVAILABLE_APP_PANEL_CONTROLLER };
     vi.mocked(sdk.projects.directory).mockResolvedValue({
       entries: [{ kind: "file", name: "notes.md", path: "notes.md" }],
       truncated: false,
@@ -182,5 +197,57 @@ describe("ProjectsRegion", () => {
     expect(
       vi.mocked(appToast.error).mock.calls.map(([title]) => title),
     ).toEqual(toasts);
+  });
+
+  it("marks the active file of the focused surface and follows tab changes", async () => {
+    const panel = createAppPanelController(() => ({
+      activeTabId: null,
+      close: () => undefined,
+      destinations: [],
+    }));
+    navigation.surface = { openFilePreview: () => true, panel };
+    vi.mocked(sdk.projects.directory).mockResolvedValue({
+      entries: [
+        { kind: "file", name: "notes.md", path: "notes.md" },
+        { kind: "file", name: "other.md", path: "other.md" },
+      ],
+      truncated: false,
+    });
+    const publishFile = (path: string | null) =>
+      panel.publishTabs({
+        open: true,
+        selectedKey: path === null ? null : "tab",
+        entries:
+          path === null
+            ? []
+            : [
+                {
+                  key: "tab",
+                  title: path,
+                  status: null,
+                  closable: true,
+                  detail: { kind: "file", path },
+                  icon: null,
+                  select: () => undefined,
+                  close: () => undefined,
+                },
+              ],
+      });
+    publishFile("/repo/alpha/notes.md");
+    renderRegion([makeProject(THIS_HOST_ID)]);
+    fireEvent.click(await screen.findByText("Alpha"));
+    const row = (name: string) =>
+      screen.getByText(name).closest('[role="treeitem"]');
+
+    await screen.findByText("notes.md");
+    expect(row("notes.md")?.getAttribute("aria-current")).toBe("true");
+    expect(row("other.md")?.getAttribute("aria-current")).toBeNull();
+
+    act(() => publishFile("/repo/alpha/other.md"));
+    expect(row("notes.md")?.getAttribute("aria-current")).toBeNull();
+    expect(row("other.md")?.getAttribute("aria-current")).toBe("true");
+
+    act(() => publishFile(null));
+    expect(row("other.md")?.getAttribute("aria-current")).toBeNull();
   });
 });

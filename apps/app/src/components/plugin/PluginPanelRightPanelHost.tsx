@@ -340,6 +340,7 @@ export function PluginPanelRightPanelHost({
     activeBrowserTab,
     browserTabs,
     closeTab,
+    openFileTabView,
     openTab,
     openPluginDetail,
     openPluginPanel,
@@ -589,6 +590,11 @@ export function PluginPanelRightPanelHost({
     return true;
   });
   useAppCommandHandler("panel.newTab", () => {
+    if (!isFocused || panel === null) return false;
+    openNewTab();
+    return true;
+  });
+  useAppCommandHandler("file.quickOpen", () => {
     if (!isFocused || panel === null) return false;
     openNewTab();
     return true;
@@ -903,6 +909,7 @@ export function PluginPanelRightPanelHost({
           onCollapse={panelController.close}
           onClose={panelController.close}
           onOpenNewTab={openNewTab}
+          onOpenFileTabView={openFileTabView}
           isConversationCollapsed={isMainCollapsed}
           onToggleConversationCollapse={onToggleMainCollapse}
           renderAsDrawer={presentation === "drawer"}
@@ -922,6 +929,7 @@ export function PluginPanelRightPanelHost({
       panelBrowser.open,
       panelController,
       isOpen,
+      openFileTabView,
       openNewTab,
       panelStateId,
       reorderTab,

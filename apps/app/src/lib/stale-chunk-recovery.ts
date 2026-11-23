@@ -1,4 +1,5 @@
 import { flushPendingPromptDraftPersists } from "../hooks/usePromptDraftStorage";
+import { hasDirtyFileTabs } from "./file-opener-close-guard";
 
 const RELOAD_GUARD_KEY = "bb.stale-chunk-reload";
 const ENTRY_SCRIPT_SELECTOR = 'script[type="module"][src]';
@@ -46,7 +47,7 @@ export function installStaleChunkRecovery(): () => void {
       if (deployedEntry === null || deployedEntry === loadedEntry) return;
       const storage = window.sessionStorage;
       if (storage.getItem(RELOAD_GUARD_KEY) === deployedEntry) return;
-      if (!flushPendingPromptDraftPersists()) return;
+      if (!flushPendingPromptDraftPersists() || hasDirtyFileTabs()) return;
       storage.setItem(RELOAD_GUARD_KEY, deployedEntry);
       reloading = true;
       window.location.reload();

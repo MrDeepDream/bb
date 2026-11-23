@@ -195,6 +195,19 @@ const testState = vi.hoisted(() => ({
         none: [],
       },
     },
+    {
+      command: "window.new" as const,
+      desktopOnly: false,
+      shortcut: {
+        key: "n",
+        mod: true,
+        meta: false,
+        control: false,
+        alt: false,
+        shift: true,
+      },
+      when: { all: ["mainSurface" as const], none: [] },
+    },
   ],
 }));
 
@@ -570,6 +583,36 @@ describe("AppCommandProvider", () => {
 
     dispatchShortcut();
     expect(testState.calls).toEqual(["question"]);
+  });
+
+  it("scopes Ctrl+Shift+N and Ctrl+E to the focused editor", () => {
+    renderProvider(
+      <>
+        <Handler command="file.quickOpen" name="quick-open" result={true} />
+        <Handler command="window.new" name="new-window" result={true} />
+        <div className="monaco-editor">
+          <div className="native-edit-context" data-testid="editor-input" />
+        </div>
+        <div data-testid="outside" />
+      </>,
+    );
+    const press = (testId: string, key: string, shiftKey: boolean) =>
+      screen.getByTestId(testId).dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          ctrlKey: true,
+          key,
+          shiftKey,
+        }),
+      );
+
+    press("editor-input", "N", true);
+    press("outside", "N", true);
+    press("editor-input", "e", false);
+    press("outside", "e", false);
+
+    expect(testState.calls).toEqual(["quick-open", "new-window", "quick-open"]);
   });
 
   it("unregisters handlers on unmount and preserves native behavior when unhandled", () => {

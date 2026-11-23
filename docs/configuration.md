@@ -647,6 +647,16 @@ Control-arrow editing. `pane.focus.previous` / `pane.focus.next` and
 unassigned and act on the focused pane's open thread; Mark read and Pin toggle
 like the matching thread menu item.
 
+In a Monaco file editor on Windows and Linux, `Ctrl+Shift+N` and `Ctrl+E` also
+run `file.quickOpen`, whose New tab page lists recent files. Outside the
+editor, `Ctrl+Shift+N` stays New window. Overriding `file.quickOpen` turns both
+aliases off, and binding another command to one of these chords turns that
+alias off. On the same platforms the editor binds `Ctrl+D` (duplicate),
+`Ctrl+Y` (delete line), `Ctrl+W` (expand selection), `Alt+J` (add next match),
+`Alt+Shift+Up/Down` (move lines), and `Alt+Left/Right` (back and forward through
+editor locations). While the editor has focus, `Ctrl+W` does not close the tab.
+`Ctrl+Shift+Z` is redo. macOS keeps Monaco's default editor keys.
+
 | Area      | Command                                      | Default                     | Availability             |
 | --------- | -------------------------------------------- | --------------------------- | ------------------------ |
 | Palette   | Quick palette                                | `Mod+Shift+P`               | All clients              |

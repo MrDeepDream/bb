@@ -154,7 +154,8 @@ const APP_COMMAND_CONTEXT_KEYS = [
 
 const appCommandContextKeySchema = z.enum(APP_COMMAND_CONTEXT_KEYS);
 export type AppCommandContextKey = z.infer<typeof appCommandContextKeySchema>;
-export type AppCommandContext = Record<AppCommandContextKey, boolean>;
+export type AppClientCommandContextKey = AppCommandContextKey | "editorFocus";
+export type AppCommandContext = Record<AppClientCommandContextKey, boolean>;
 
 export const appShortcutSchema = z
   .object({
@@ -335,13 +336,20 @@ export const appKeybindingSchema = z
   .strict();
 export type AppKeybinding = z.infer<typeof appKeybindingSchema>;
 
+export interface AppClientKeybinding extends Omit<AppKeybinding, "when"> {
+  when: {
+    all: readonly AppClientCommandContextKey[];
+    none: readonly AppClientCommandContextKey[];
+  };
+}
+
 const appDefaultKeybindingSchema = appKeybindingSchema.extend({
   shortcut: appShortcutSchema.nullable(),
 });
 export type AppDefaultKeybinding = z.infer<typeof appDefaultKeybindingSchema>;
 
 export function isAppKeybindingAvailableForClient(
-  binding: AppKeybinding | AppDefaultKeybinding,
+  binding: Pick<AppClientKeybinding, "desktopOnly" | "when">,
   client: { isDesktop: boolean; platform: string },
 ): boolean {
   const platform = keyboardPlatform(client.platform);

@@ -32,6 +32,7 @@ import {
   type ThreadRecentItem,
 } from "./threadRecentItems";
 import {
+  getDirectoryFromPath,
   getFileNameFromPath,
   resolveRightPanelFileIconName,
 } from "./rightPanelFileVisuals";
@@ -167,9 +168,10 @@ function getFileSearchEntryId(entry: FileSearchSectionEntry): string {
     return entry.action.id;
   }
   if (entry.kind === "recent") {
+    const hostId = entry.item.source === "host" ? entry.item.hostId : null;
     return `${RECENT_ENTRY_ID_PREFIX}-${entry.item.source}-${encodeURIComponent(
-      entry.item.path,
-    )}`;
+      hostId ?? "",
+    )}-${encodeURIComponent(entry.item.path)}`;
   }
   return getFileSearchResultId(entry.suggestion);
 }
@@ -389,7 +391,7 @@ function RecentResultRow({
   }, [item, onSelect]);
   const iconName = resolveRightPanelFileIconName(item.path);
   const name = getFileNameFromPath({ path: item.path });
-  const directory = directoryFromPath(item.path);
+  const directory = getDirectoryFromPath({ path: item.path });
   const relativeTime = formatRelativeTime({
     timestamp: item.openedAt,
     now: nowMs,
@@ -595,7 +597,11 @@ export function NewTabFileSearch({
 
   const handleRecentSelect = useCallback(
     (item: ThreadRecentItem) => {
-      onSelect({ source: item.source, path: item.path });
+      onSelect(
+        item.source === "host"
+          ? { source: "host", hostId: item.hostId, path: item.path }
+          : { source: item.source, path: item.path },
+      );
     },
     [onSelect],
   );

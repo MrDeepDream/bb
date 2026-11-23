@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  appKeybindingSchema,
   matchesAppShortcut,
   type AppCommandContext,
   type AppKeybinding,
@@ -10,6 +11,7 @@ import {
   formatAppShortcut,
   formatAppShortcutAria,
   matchesAppCommandContext,
+  resolveEditorAppKeybindings,
 } from "./app-keybindings";
 
 const MOD_N: AppShortcut = {
@@ -33,6 +35,7 @@ const ALT_P: AppShortcut = {
 const CONTEXT: AppCommandContext = {
   mainSurface: true,
   modalOpen: false,
+  editorFocus: false,
   editableFocus: false,
   terminalFocus: false,
   browserFocus: false,
@@ -300,5 +303,84 @@ describe("app keybindings", () => {
     expect(formatAppShortcutAria(shortcut, "MacIntel")).toBe(
       "Control+Meta+ArrowLeft",
     );
+  });
+});
+
+describe("resolveEditorAppKeybindings", () => {
+  const keys = (
+    overrides: Parameters<typeof resolveEditorAppKeybindings>[0],
+    platform = "Win32",
+    plugins: Parameters<typeof resolveEditorAppKeybindings>[2] = [],
+  ) =>
+    resolveEditorAppKeybindings(overrides, platform, plugins).map(
+      (binding) => binding.shortcut.key,
+    );
+
+  it("binds every editor chord without overrides", () => {
+    expect(keys([])).toEqual(["n", "e", "f"]);
+  });
+
+  it("keeps Find in Files when file.quickOpen has an override", () => {
+    expect(
+      keys([
+        { command: "file.quickOpen", shortcut: null, platform: "windows" },
+      ]),
+    ).toEqual(["f"]);
+  });
+
+  it("drops only Find in Files when its plugin command is overridden", () => {
+    expect(
+      keys([{ command: "plugin:monaco-editor/find-in-files", shortcut: null }]),
+    ).toEqual(["n", "e"]);
+  });
+
+  it("ignores an override scoped to another platform", () => {
+    expect(
+      keys([{ command: "file.quickOpen", shortcut: null, platform: "linux" }]),
+    ).toEqual(["n", "e", "f"]);
+  });
+
+  it("drops only the alias whose chord another command claims", () => {
+    expect(
+      keys([
+        {
+          command: "thread.search",
+          shortcut: { ...MOD_N, key: "e" },
+        },
+      ]),
+    ).toEqual(["n", "f"]);
+  });
+
+  it("leaves a chord to a plugin that binds it", () => {
+    expect(
+      keys([], "Win32", [{ shortcut: { ...MOD_N, shift: true } }]),
+    ).toEqual(["e", "f"]);
+  });
+
+  it("scopes Find in Files to the editor so the terminal keeps the chord", () => {
+    const binding = resolveEditorAppKeybindings([], "Win32", []).find(
+      ({ shortcut }) => shortcut.key === "f",
+    );
+    expect(binding?.command).toBe("plugin:monaco-editor/find-in-files");
+    expect(binding?.when.all).toContain("editorFocus");
+    expect(
+      appKeybindingSchema.safeParse({
+        command: binding?.command,
+        desktopOnly: false,
+        shortcut: binding?.shortcut,
+        when: { all: ["mainSurface"], none: [] },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("keeps editorFocus out of the server wire schema", () => {
+    expect(
+      appKeybindingSchema.safeParse({
+        command: "file.quickOpen",
+        desktopOnly: false,
+        shortcut: MOD_N,
+        when: { all: ["editorFocus"], none: [] },
+      }).success,
+    ).toBe(false);
   });
 });

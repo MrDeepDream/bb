@@ -3,6 +3,8 @@ import type {
   ComposerPlusMenuItem,
   PluginComposerScope,
 } from "@get-bb/plugin-sdk";
+import { getHostPathBasename } from "@bb/domain";
+import { getFileBasename } from "./live-file-navigation";
 import type {
   PluginCodeFenceRendererSlot,
   PluginComposerCustomizationSlot,
@@ -338,11 +340,37 @@ export type FileOpenerPreferenceMap = Record<string, string>;
 
 export const BUILT_IN_FILE_OPENER_PREFERENCE = "__builtin__";
 
-export function getFileExtension(path: string): string | null {
-  const name = path.split("/").at(-1) ?? path;
+function fileOpenerExtensionCandidates(path: string): string[] {
+  const name = (
+    getHostPathBasename(path) ?? getFileBasename(path)
+  ).toLowerCase();
   const dotIndex = name.lastIndexOf(".");
-  if (dotIndex <= 0 || dotIndex === name.length - 1) return null;
-  return name.slice(dotIndex + 1).toLowerCase();
+  if (dotIndex < 0 || dotIndex === name.length - 1) return [];
+  const extension = name.slice(dotIndex + 1);
+  if (!name.startsWith(".")) return [extension];
+  const stem = name.slice(1).split(".", 1)[0] ?? "";
+  return stem === "" || stem === extension ? [extension] : [extension, stem];
+}
+
+function claimedFileOpenerExtension(
+  registrations: readonly PluginFileOpenerSlot[],
+  path: string,
+): string | null {
+  return (
+    fileOpenerExtensionCandidates(path).find((candidate) =>
+      registrations.some((opener) => opener.extensions.includes(candidate)),
+    ) ?? null
+  );
+}
+
+export function getFileOpenersForPath(
+  registrations: readonly PluginFileOpenerSlot[],
+  path: string,
+): PluginFileOpenerSlot[] {
+  const extension = claimedFileOpenerExtension(registrations, path);
+  return extension === null
+    ? []
+    : registrations.filter((opener) => opener.extensions.includes(extension));
 }
 
 export function buildFileOpenerRef(opener: {
@@ -369,7 +397,7 @@ export function resolveFileOpenerReplacement(args: {
     );
   }
 
-  const extension = getFileExtension(args.path);
+  const extension = claimedFileOpenerExtension(args.registrations, args.path);
   if (extension === null) return OWNER_REPLACEMENT;
   const preference = args.preference?.[extension];
   if (preference === BUILT_IN_FILE_OPENER_PREFERENCE) {

@@ -11,6 +11,7 @@ import { getBrowserUrlHost } from "@/lib/browser-url";
 import type { SecondaryFileFixedPanelTab } from "@/lib/fixed-panel-tabs-state";
 import { BrowserTabIcon } from "./BrowserTabIcon";
 import { RightPanelFileTabIcon } from "./RightPanelFileTabIcon";
+import { getFileNameFromPath } from "./rightPanelFileVisuals";
 
 export interface PanelTabPresentation {
   contentFillsRegion: boolean;
@@ -128,7 +129,10 @@ export function usePanelTabPresenter({
             contentFillsRegion:
               tab.fileOpenerOwner !== undefined || action?.layout === "flush",
             isPinned: false,
-            label: tab.title,
+            label:
+              tab.fileOpenerOwner === undefined
+                ? tab.title
+                : getFileNameFromPath({ path: tab.title }),
             leadingVisual: (
               <PluginItemIcon
                 pluginId={tab.pluginId}

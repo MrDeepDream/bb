@@ -18,6 +18,7 @@ import {
   keyboardPlatform,
   isMacKeyboardPlatform,
   matchesAppShortcut,
+  type AppClientKeybinding,
   type AppCommandContext,
   type AppCommandContextKey,
   type KeyboardCommandId,
@@ -29,6 +30,7 @@ import { getBbDesktopInfo } from "@/lib/bb-desktop";
 import {
   browserPlatform,
   isEditableKeyboardTarget,
+  isEditorKeyboardTarget,
   matchesAppCommandContext,
   presentAppShortcut,
   type AppShortcutPresentation,
@@ -82,6 +84,7 @@ const EMPTY_CONTEXT: AppCommandContext = {
   mainSurface: false,
   modalOpen: false,
   editableFocus: false,
+  editorFocus: false,
   terminalFocus: false,
   browserFocus: false,
   modelPickerOpen: false,
@@ -106,8 +109,15 @@ function hasOpenModal(): boolean {
 
 export function AppCommandProvider({ children }: { children: ReactNode }) {
   const systemConfig = useSystemConfig();
-  const { keybindings, defaults: defaultKeybindings } =
-    usePluginCommandBindings();
+  const {
+    keybindings,
+    editorKeybindings,
+    defaults: defaultKeybindings,
+  } = usePluginCommandBindings();
+  const dispatchKeybindings = useMemo<readonly AppClientKeybinding[]>(
+    () => [...keybindings, ...editorKeybindings],
+    [editorKeybindings, keybindings],
+  );
   const showKeyboardHints =
     systemConfig.data?.generalSettings?.showKeyboardHints ??
     defaultAppSettings.showKeyboardHints;
@@ -118,7 +128,7 @@ export function AppCommandProvider({ children }: { children: ReactNode }) {
     null,
   );
   const shortcutHintModifierHeldRef = useRef(false);
-  const keybindingsRef = useRef(keybindings);
+  const keybindingsRef = useRef(dispatchKeybindings);
   const handlersRef = useRef(
     new Map<KeyboardCommandId, Map<symbol, AppCommandHandlerRegistration>>(),
   );
@@ -186,8 +196,8 @@ export function AppCommandProvider({ children }: { children: ReactNode }) {
   }, [showKeyboardHints]);
 
   useEffect(() => {
-    keybindingsRef.current = keybindings;
-  }, [keybindings]);
+    keybindingsRef.current = dispatchKeybindings;
+  }, [dispatchKeybindings]);
 
   const subscribeToAvailability = useCallback<
     AppCommandProviderValue["subscribeToAvailability"]
@@ -272,6 +282,7 @@ export function AppCommandProvider({ children }: { children: ReactNode }) {
       next.mainSurface = true;
       next.modalOpen = hasOpenModal();
       next.editableFocus = isEditableKeyboardTarget(target);
+      next.editorFocus = isEditorKeyboardTarget(target);
       next.terminalFocus =
         target instanceof HTMLElement &&
         target.closest("[data-app-terminal]") !== null;

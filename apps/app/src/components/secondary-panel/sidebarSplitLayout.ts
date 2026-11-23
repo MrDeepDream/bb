@@ -196,6 +196,24 @@ export function getSidebarTabPlacement(
   };
 }
 
+export function getSidebarTabPlacements(
+  state: SidebarSplitState,
+): Map<string, SidebarTabPlacement> {
+  const placements = new Map<string, SidebarTabPlacement>();
+  for (const group of Object.values(state.groups)) {
+    group.tabIds.forEach((tabId, index) => {
+      if (placements.has(tabId)) return;
+      placements.set(tabId, {
+        followingTabId: group.tabIds[index + 1] ?? null,
+        groupId: group.id,
+        index,
+        precedingTabId: group.tabIds[index - 1] ?? null,
+      });
+    });
+  }
+  return placements;
+}
+
 export function restoreSidebarTabPlacement(
   state: SidebarSplitState,
   tabId: string,
@@ -254,26 +272,26 @@ function insertMissingTabsInAvailableOrder(
   missingTabIds: readonly string[],
   availableTabIds: readonly string[],
 ): string[] {
-  const next = [...tabIds];
-  for (const missingTabId of missingTabIds) {
-    const availableIndex = availableTabIds.indexOf(missingTabId);
-    const followingTabId = availableTabIds
-      .slice(availableIndex + 1)
-      .find((tabId) => next.includes(tabId));
-    if (followingTabId !== undefined) {
-      next.splice(next.indexOf(followingTabId), 0, missingTabId);
-      continue;
+  const placed = new Set(tabIds);
+  const missing = new Set(missingTabIds);
+  const insertedBefore = new Map<string, string[]>();
+  let waiting: string[] = [];
+  let lastPlacedTabId: string | null = null;
+  for (const tabId of availableTabIds) {
+    if (missing.has(tabId)) {
+      waiting.push(tabId);
+    } else if (placed.has(tabId)) {
+      if (waiting.length > 0) insertedBefore.set(tabId, waiting);
+      waiting = [];
+      lastPlacedTabId = tabId;
     }
-    const precedingTabId = availableTabIds
-      .slice(0, availableIndex)
-      .reverse()
-      .find((tabId) => next.includes(tabId));
-    const insertAt =
-      precedingTabId === undefined
-        ? next.length
-        : next.indexOf(precedingTabId) + 1;
-    next.splice(insertAt, 0, missingTabId);
   }
+  const next: string[] = [];
+  for (const tabId of tabIds) {
+    next.push(...(insertedBefore.get(tabId) ?? []), tabId);
+    if (tabId === lastPlacedTabId) next.push(...waiting);
+  }
+  if (lastPlacedTabId === null) next.push(...waiting);
   return next;
 }
 
@@ -460,6 +478,7 @@ export function moveSidebarTab(
   tabId: string,
   target: SplitDropTarget,
   ids: Pick<SidebarSplitIds, "groupId">,
+  beforeTabId: string | null = null,
 ): SidebarSplitState {
   const sourcePaneGroup = findSidebarPaneGroup(state, sourcePaneId);
   const targetPaneGroup = findSidebarPaneGroup(state, target.paneId);
@@ -476,9 +495,17 @@ export function moveSidebarTab(
   if (target.zone === "center") {
     if (sourcePaneId === target.paneId) return state;
     const groups = { ...state.groups };
+    const targetTabIds = targetGroup.tabIds.filter((id) => id !== tabId);
+    const beforeIndex =
+      beforeTabId === null ? -1 : targetTabIds.indexOf(beforeTabId);
+    targetTabIds.splice(
+      beforeIndex === -1 ? targetTabIds.length : beforeIndex,
+      0,
+      tabId,
+    );
     groups[targetGroupId] = {
       ...targetGroup,
-      tabIds: [...targetGroup.tabIds.filter((id) => id !== tabId), tabId],
+      tabIds: targetTabIds,
       activeTabId: tabId,
     };
     if (sourceGroup.tabIds.length === 1) {
@@ -553,6 +580,44 @@ export function moveSidebarTab(
       state.maximizedPaneId === sourcePaneId
         ? layout.focusedPaneId
         : state.maximizedPaneId,
+  };
+}
+
+export function splitSidebarTabView(
+  state: SidebarSplitState,
+  view: { anchorTabId: string; side: SplitSide; tabId: string },
+  ids: Pick<SidebarSplitIds, "groupId">,
+): SidebarSplitState {
+  if (countPanes(state.layout.root) >= MAX_PANES) return state;
+  const panes = listPanes(state.layout.root);
+  const paneHolding = (tabId: string) =>
+    panes.find((pane) =>
+      getSidebarGroupForPane(state, pane.paneId)?.tabIds.includes(tabId),
+    );
+  const source = paneHolding(view.tabId);
+  if (source === undefined) return state;
+  const anchor = paneHolding(view.anchorTabId) ?? source;
+  const moved = moveSidebarTab(
+    state,
+    source.paneId,
+    view.tabId,
+    { paneId: anchor.paneId, zone: view.side },
+    ids,
+  );
+  const anchorGroup = getSidebarGroupForPane(moved, anchor.paneId);
+  if (
+    moved === state ||
+    anchorGroup === null ||
+    !anchorGroup.tabIds.includes(view.anchorTabId)
+  ) {
+    return moved;
+  }
+  return {
+    ...moved,
+    groups: {
+      ...moved.groups,
+      [anchorGroup.id]: { ...anchorGroup, activeTabId: view.anchorTabId },
+    },
   };
 }
 

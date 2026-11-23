@@ -1,10 +1,12 @@
 import {
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEventHandler,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -51,6 +53,10 @@ import {
   MACOS_WINDOW_NO_DRAG_CLASS,
 } from "@/lib/bb-desktop";
 import {
+  batchFileTabClose,
+  useIsFileTabDirty,
+} from "@/lib/file-opener-close-guard";
+import {
   PANEL_TAB_DRAG_DISTANCE_PX,
   type SecondaryPanelRenderableTab,
   type SecondaryPanelTabReorderHandler,
@@ -93,9 +99,17 @@ export interface SecondaryPanelTabStripProps {
   onReorderTab: SecondaryPanelTabReorderHandler;
   usesDesktopChrome: boolean;
   isPanelOpen: boolean;
+  tabPanelId?: string;
 }
 
-export type SecondaryPanelTabCloseScope = "self" | "others" | "right";
+export function secondaryPanelTabDomId(
+  tabPanelId: string,
+  index: number,
+): string {
+  return `${tabPanelId}-tab-${index}`;
+}
+
+export type SecondaryPanelTabCloseScope = "self" | "others" | "right" | "all";
 
 export function secondaryPanelTabsToClose(
   tabs: readonly SecondaryPanelRenderableTab[],
@@ -111,12 +125,17 @@ export function secondaryPanelTabsToClose(
       ? tabs.slice(index, index + 1)
       : scope === "right"
         ? tabs.slice(index + 1)
-        : tabs.filter((tab) => tab.tab.id !== tabId);
+        : scope === "all"
+          ? tabs
+          : tabs.filter((tab) => tab.tab.id !== tabId);
   return candidates.filter((tab) => !tab.isPinned);
 }
 
 interface SortablePanelTabProps {
   isActive: boolean;
+  isFocusable: boolean;
+  domId: string;
+  tabPanelId: string | undefined;
   activeTabRef: RefObject<HTMLDivElement | null>;
   contextMenuDisabled: boolean;
   dragDisabled: boolean;
@@ -137,6 +156,7 @@ export function SecondaryPanelTabStrip({
   onReorderTab,
   usesDesktopChrome,
   isPanelOpen,
+  tabPanelId,
 }: SecondaryPanelTabStripProps) {
   const stripRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -368,15 +388,50 @@ export function SecondaryPanelTabStrip({
       const closesActiveTab = tabsToClose.some(
         (tab) => tab.tab.id === activeTabId,
       );
-      if (scope !== "self" && closesActiveTab) {
+      if (scope !== "self" && scope !== "all" && closesActiveTab) {
         tabs.find((tab) => tab.tab.id === tabId)?.onSelect();
       }
-      for (const tab of tabsToClose) {
-        tab.onClose();
-      }
+      batchFileTabClose(() => {
+        for (const tab of tabsToClose) {
+          tab.onClose();
+        }
+      });
     },
     [activeTabId, tabs],
   );
+  const handleTabListKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+        return;
+      }
+      const tabElements = [
+        ...event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'),
+      ];
+      const current = tabElements.indexOf(event.target as HTMLElement);
+      if (current === -1) return;
+      event.preventDefault();
+      const last = tabElements.length - 1;
+      const next =
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? last
+            : event.key === "ArrowRight"
+              ? current === last
+                ? 0
+                : current + 1
+              : current === 0
+                ? last
+                : current - 1;
+      tabElements[next]?.focus();
+    },
+    [],
+  );
+  const focusableTabId = tabs.some((tab) => tab.tab.id === activeTabId)
+    ? activeTabId
+    : (tabs[0]?.tab.id ?? null);
+  const tabDomPrefix = useId();
+  const tabDomRoot = tabPanelId ?? tabDomPrefix;
 
   const noDragClass = usesDesktopChrome ? MACOS_WINDOW_NO_DRAG_CLASS : null;
   const chevronNoDragClass = usesDesktopChrome
@@ -395,13 +450,16 @@ export function SecondaryPanelTabStrip({
           items={tabIds}
           strategy={horizontalListSortingStrategy}
         >
-          {tabs.map((tab) => (
+          {tabs.map((tab, index) => (
             <SortablePanelTab
               key={tab.tab.id}
               activeTabRef={activeTabRef}
               contextMenuDisabled={isCompactViewport}
+              domId={secondaryPanelTabDomId(tabDomRoot, index)}
               dragDisabled={dragDisabled}
               isActive={tab.tab.id === activeTabId}
+              isFocusable={tab.tab.id === focusableTabId}
+              tabPanelId={tabPanelId}
               noDragClass={noDragClass}
               onBeginTabDrag={onBeginTabDrag}
               onCloseTabs={handleCloseTabs}
@@ -414,8 +472,11 @@ export function SecondaryPanelTabStrip({
           <DragOverlay className="cursor-grabbing">
             {draggingTab === null ? null : (
               <PanelTab
+                domId={`${tabDomRoot}-drag-overlay`}
                 isActive={draggingTab.tab.id === activeTabId}
+                isFocusable={false}
                 tab={draggingTab}
+                tabPanelId={undefined}
               />
             )}
           </DragOverlay>,
@@ -437,6 +498,9 @@ export function SecondaryPanelTabStrip({
       handleCloseTabs,
       draggingTab,
       activeTabId,
+      focusableTabId,
+      tabDomRoot,
+      tabPanelId,
     ],
   );
 
@@ -481,7 +545,11 @@ export function SecondaryPanelTabStrip({
           <div
             ref={contentRef}
             data-secondary-panel-tab-content
-            className="flex w-max items-center gap-1"
+            role="tablist"
+            aria-label="Open tabs"
+            aria-orientation="horizontal"
+            onKeyDown={handleTabListKeyDown}
+            className="flex w-max items-center"
           >
             {dndTabs}
           </div>
@@ -501,12 +569,15 @@ export function SecondaryPanelTabStrip({
 function SortablePanelTab({
   activeTabRef,
   contextMenuDisabled,
+  domId,
   dragDisabled,
   isActive,
+  isFocusable,
   noDragClass,
   onBeginTabDrag,
   onCloseTabs,
   tab,
+  tabPanelId,
   tabs,
 }: SortablePanelTabProps) {
   const { isDragging, listeners, setNodeRef, transform, transition } =
@@ -540,12 +611,20 @@ function SortablePanelTab({
     secondaryPanelTabsToClose(tabs, tabId, "others").length > 0;
   const canCloseRight =
     secondaryPanelTabsToClose(tabs, tabId, "right").length > 0;
+  const canCloseAll = secondaryPanelTabsToClose(tabs, tabId, "all").length > 0;
+  const splitOwnsFocusRef = useRef(false);
+  const splitTab = (side: "right" | "bottom") => {
+    splitOwnsFocusRef.current = true;
+    tab.onSplit?.(side);
+  };
 
   return (
     <ContextMenu modal={false}>
       <ContextMenuTrigger asChild disabled={contextMenuDisabled}>
         <div
           ref={setTabRef}
+          role="presentation"
+          data-panel-tab-id={tabId}
           style={style}
           className={cn(
             "shrink-0",
@@ -559,10 +638,23 @@ function SortablePanelTab({
           }}
           {...sortableListeners}
         >
-          <PanelTab tab={tab} isActive={isActive} />
+          <PanelTab
+            domId={domId}
+            isActive={isActive}
+            isFocusable={isFocusable}
+            tab={tab}
+            tabPanelId={tabPanelId}
+          />
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent aria-label={`${tab.label} tab actions`}>
+      <ContextMenuContent
+        aria-label={`${tab.label} tab actions`}
+        onCloseAutoFocus={(event) => {
+          if (!splitOwnsFocusRef.current) return;
+          splitOwnsFocusRef.current = false;
+          event.preventDefault();
+        }}
+      >
         <ContextMenuItem
           disabled={!canCloseSelf}
           onSelect={() => onCloseTabs(tabId, "self")}
@@ -582,6 +674,30 @@ function SortablePanelTab({
         >
           Close tabs to the right
         </ContextMenuItem>
+        <ContextMenuItem
+          disabled={!canCloseAll}
+          onSelect={() => onCloseTabs(tabId, "all")}
+        >
+          Close all tabs
+        </ContextMenuItem>
+        {tab.onSplit !== undefined || tab.onTogglePin !== undefined ? (
+          <ContextMenuSeparator />
+        ) : null}
+        {tab.onSplit !== undefined ? (
+          <>
+            <ContextMenuItem onSelect={() => splitTab("right")}>
+              Split right
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => splitTab("bottom")}>
+              Split down
+            </ContextMenuItem>
+          </>
+        ) : null}
+        {tab.onTogglePin !== undefined ? (
+          <ContextMenuItem onSelect={tab.onTogglePin}>
+            {tab.isPinned ? "Unpin tab" : "Pin tab"}
+          </ContextMenuItem>
+        ) : null}
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -631,12 +747,19 @@ function TabStripScrollButton({
 }
 
 function PanelTab({
+  domId,
   tab,
+  tabPanelId,
   isActive,
+  isFocusable,
 }: {
+  domId: string;
   tab: SecondaryPanelRenderableTab;
+  tabPanelId: string | undefined;
   isActive: boolean;
+  isFocusable: boolean;
 }) {
+  const isDirty = useIsFileTabDirty(tab.tab.id);
   const title =
     tab.statusLabel === null ? tab.label : `${tab.label} (${tab.statusLabel})`;
   return (
@@ -647,6 +770,14 @@ function PanelTab({
       title={title}
       isActive={isActive}
       onSelect={tab.onSelect}
+      editorTab={{
+        id: domId,
+        panelId: tabPanelId,
+        isFocusable,
+        isDirty,
+        isPreview: tab.isPreview === true,
+        ...(tab.onKeepOpen === undefined ? {} : { onKeepOpen: tab.onKeepOpen }),
+      }}
       labelMaxWidthClass="max-w-[160px]"
       enlargeCloseTargetOnCoarsePointer={
         tab.tab.kind === "workspace-file-preview" ||

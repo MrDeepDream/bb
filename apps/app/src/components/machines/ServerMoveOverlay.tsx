@@ -14,6 +14,10 @@ import {
   useServerMoveStatusPolling,
 } from "@/hooks/queries/server-move-queries";
 import { useServerConnectionState } from "@/hooks/useServerConnectionState";
+import {
+  requestPageUnload,
+  whenNoDirtyFileTabs,
+} from "@/lib/file-opener-close-guard";
 import { getMutationErrorMessage } from "@/lib/mutation-errors";
 import {
   SERVER_MOVE_ARRIVAL_PARAM,
@@ -151,14 +155,20 @@ export function ServerMoveOverlay({
 
   const destination =
     content?.kind === "redirecting" ? content.destination : null;
+  const redirectMoveId =
+    content?.kind === "redirecting" ? content.move.moveId : null;
   const navigatedDestination = useRef<string | null>(null);
   useEffect(() => {
     if (destination === null || navigatedDestination.current === destination) {
       return;
     }
     navigatedDestination.current = destination;
-    navigateTo(destination);
-  }, [destination, navigateTo]);
+    const followMove = () => navigateTo(destination);
+    requestPageUnload(followMove, () => {
+      setDismissedMoveId(redirectMoveId);
+      whenNoDirtyFileTabs(followMove);
+    });
+  }, [destination, navigateTo, redirectMoveId]);
 
   const arrivedMoveId =
     content?.kind === "arrived" ? content.lastMove.moveId : null;

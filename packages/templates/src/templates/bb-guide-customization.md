@@ -284,6 +284,12 @@ on desktop and `Control+Shift+[` / `Control+Shift+]` on the web.
 unbound and act on the focused pane's open thread; Mark read and Pin toggle
 like the matching thread menu item.
 
+In a Monaco file editor on Windows and Linux, `Ctrl+Shift+N` and `Ctrl+E` also
+run `file.quickOpen`; outside the editor `Ctrl+Shift+N` stays `window.new`.
+`keyboard list` does not print these two aliases. An override for
+`file.quickOpen` turns both off, and binding another command to one of these
+chords turns that alias off.
+
 An open question card binds `question.select.1`–`9` (`1`–`9`),
 `question.submit` (`Mod+Enter`: Next, or Submit on the last question),
 `question.previous` / `question.next` (`ArrowLeft` / `ArrowRight` with focus

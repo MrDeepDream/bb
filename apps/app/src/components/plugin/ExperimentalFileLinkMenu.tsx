@@ -14,15 +14,8 @@ import {
   getFileBasename,
   getExperimentalFileLocationStart,
 } from "@/lib/live-file-navigation";
+import { getFileOpenersForPath } from "@/lib/plugin-slot-resolvers";
 import { usePluginSlotKind } from "@/lib/plugin-slots";
-
-function getFileExtension(path: string): string | null {
-  const name = getFileBasename(path);
-  const dotIndex = name.lastIndexOf(".");
-  return dotIndex > 0 && dotIndex < name.length - 1
-    ? name.slice(dotIndex + 1).toLowerCase()
-    : null;
-}
 
 export function ExperimentalFileLinkMenu({
   intent,
@@ -36,13 +29,11 @@ export function ExperimentalFileLinkMenu({
       ? resolveLiveFilePath(localTargets.root, intent.target.path)
       : null;
   const fileOpeners = usePluginSlotKind("fileOpeners");
-  const extension = getFileExtension(intent.target.path);
   const matchingOpeners =
-    extension === null ||
-    (intent.target.kind === "workspace" &&
-      intent.target.experimental_ref !== undefined)
+    intent.target.kind === "workspace" &&
+    intent.target.experimental_ref !== undefined
       ? []
-      : fileOpeners.filter((opener) => opener.extensions.includes(extension));
+      : getFileOpenersForPath(fileOpeners, intent.target.path);
   const location = getExperimentalFileLocationStart(intent.location);
 
   return (

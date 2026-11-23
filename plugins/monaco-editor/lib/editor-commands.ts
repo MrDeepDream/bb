@@ -1,19 +1,61 @@
 import { toast } from "sonner";
-import { experimental_copyToClipboard } from "@get-bb/plugin-sdk/app";
+import {
+  experimental_copyToClipboard,
+  type ExperimentalFilePreviewOptions,
+} from "@get-bb/plugin-sdk/app";
 import type * as MonacoNs from "monaco-editor";
+import {
+  openFindInFiles,
+  type FindInFilesFile,
+} from "./find-in-files-state.js";
 
 type Editor = MonacoNs.editor.IStandaloneCodeEditor;
+
+type OpenFilePreview = (options: ExperimentalFilePreviewOptions) => boolean;
 
 export type ActiveEditor = {
   editor: Editor;
   absolutePath: string;
   relativePath: string;
+  searchFile: FindInFilesFile;
+  openFile: OpenFilePreview;
+  showInOpenTab: ShowInOpenTab;
+  walkHistory: (delta: -1 | 1) => void;
+  focusBreadcrumbs: () => void;
 };
 
+type ShowInOpenTab = (
+  documentKey: string,
+  lineNumber: number,
+  column: number,
+) => boolean;
+
 let lastFocused: ActiveEditor | null = null;
+let lastOpenFile: OpenFilePreview | null = null;
+let lastShowInOpenTab: ShowInOpenTab | null = null;
 
 export function markEditorActive(active: ActiveEditor): void {
   lastFocused = active;
+  lastOpenFile = active.openFile;
+  lastShowInOpenTab = active.showInOpenTab;
+}
+
+export function openFileFromLastEditor(
+  options: ExperimentalFilePreviewOptions,
+): boolean {
+  return lastOpenFile?.(options) ?? false;
+}
+
+export function showInOpenTabFromLastEditor(
+  documentKey: string,
+  lineNumber: number,
+  column: number,
+): boolean {
+  return lastShowInOpenTab?.(documentKey, lineNumber, column) ?? false;
+}
+
+export function focusActiveEditor(): void {
+  targetEditor()?.editor.focus();
 }
 
 export function forgetEditor(editor: Editor): void {
@@ -62,7 +104,10 @@ function monacoAction(
   };
 }
 
-export async function copy(text: string, successMessage: string): Promise<void> {
+export async function copy(
+  text: string,
+  successMessage: string,
+): Promise<void> {
   if (await experimental_copyToClipboard({ text })) {
     toast.success(successMessage);
   } else {
@@ -111,6 +156,26 @@ export const EDITOR_COMMANDS: readonly EditorCommand[] = [
     id: "copy-relative-path",
     title: "Monaco: copy relative path of current file",
     run: ({ relativePath }) => copy(relativePath, "Relative path copied"),
+  },
+  {
+    id: "navigate-back",
+    title: "Monaco: go back",
+    run: ({ walkHistory }) => walkHistory(-1),
+  },
+  {
+    id: "navigate-forward",
+    title: "Monaco: go forward",
+    run: ({ walkHistory }) => walkHistory(1),
+  },
+  {
+    id: "focus-breadcrumbs",
+    title: "Monaco: focus breadcrumbs",
+    run: ({ focusBreadcrumbs }) => focusBreadcrumbs(),
+  },
+  {
+    id: "find-in-files",
+    title: "Monaco: find in files",
+    run: ({ searchFile }) => openFindInFiles(searchFile),
   },
 ];
 

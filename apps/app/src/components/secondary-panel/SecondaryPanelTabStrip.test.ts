@@ -238,7 +238,7 @@ describe("secondary panel tab-strip edge fades", () => {
     expect(leftButton?.classList.contains("w-0")).toBe(true);
     expect(rightButton?.classList.contains("w-0")).toBe(true);
     expect(document.activeElement).toBe(
-      container.querySelector('button[aria-pressed="true"]'),
+      container.querySelector('[role="tab"][aria-selected="true"]'),
     );
   });
 });
@@ -295,10 +295,10 @@ describe("secondary panel tab close menu", () => {
   it("keeps the app accessible while the tab menu is open", () => {
     renderCloseMenuStrip(makeCloseMenuTabs());
 
-    fireEvent.contextMenu(screen.getByRole("button", { name: "file-2.ts" }));
+    fireEvent.contextMenu(screen.getByRole("tab", { name: "file-2.ts" }));
 
     expect(screen.getByRole("menuitem", { name: "Close tab" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "file-1.ts" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "file-1.ts" })).toBeTruthy();
     expect(document.body.style.pointerEvents).not.toBe("none");
   });
 
@@ -306,7 +306,7 @@ describe("secondary panel tab close menu", () => {
     const tabs = makeCloseMenuTabs();
     renderCloseMenuStrip(tabs);
 
-    fireEvent.contextMenu(screen.getByRole("button", { name: "file-2.ts" }));
+    fireEvent.contextMenu(screen.getByRole("tab", { name: "file-2.ts" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Close tab" }));
 
     expect(closeCounts(tabs)).toEqual([0, 0, 1, 0]);
@@ -316,7 +316,7 @@ describe("secondary panel tab close menu", () => {
     const tabs = makeCloseMenuTabs();
     renderCloseMenuStrip(tabs);
 
-    fireEvent.contextMenu(screen.getByRole("button", { name: "file-1.ts" }));
+    fireEvent.contextMenu(screen.getByRole("tab", { name: "file-1.ts" }));
     fireEvent.click(
       screen.getByRole("menuitem", { name: "Close tabs to the right" }),
     );
@@ -329,7 +329,7 @@ describe("secondary panel tab close menu", () => {
     const tabs = makeCloseMenuTabs();
     renderCloseMenuStrip(tabs);
 
-    fireEvent.contextMenu(screen.getByRole("button", { name: "file-3.ts" }));
+    fireEvent.contextMenu(screen.getByRole("tab", { name: "file-3.ts" }));
     expect(
       screen
         .getByRole("menuitem", { name: "Close tabs to the right" })
@@ -339,5 +339,48 @@ describe("secondary panel tab close menu", () => {
 
     expect(tabs[3]?.onSelect).not.toHaveBeenCalled();
     expect(closeCounts(tabs)).toEqual([1, 1, 1, 0]);
+  });
+
+  it.each([
+    ["Split right", "right"],
+    ["Split down", "bottom"],
+  ] as const)(
+    "does not hand focus back to the old element after %s",
+    async (itemName, side) => {
+      const previous = document.body.appendChild(
+        document.createElement("button"),
+      );
+      const onSplit = vi.fn();
+      const tabs = makeCloseMenuTabs().map((tab) => ({ ...tab, onSplit }));
+      renderCloseMenuStrip(tabs);
+      previous.focus();
+
+      fireEvent.contextMenu(screen.getByRole("tab", { name: "file-2.ts" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: itemName }));
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 20));
+      });
+
+      expect(onSplit).toHaveBeenCalledExactlyOnceWith(side);
+      expect(document.activeElement).not.toBe(previous);
+      previous.remove();
+    },
+  );
+
+  it("still restores focus after a menu action that is not a split", async () => {
+    const previous = document.body.appendChild(
+      document.createElement("button"),
+    );
+    renderCloseMenuStrip(makeCloseMenuTabs());
+    previous.focus();
+
+    fireEvent.contextMenu(screen.getByRole("tab", { name: "file-2.ts" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close tab" }));
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+    });
+
+    expect(document.activeElement).toBe(previous);
+    previous.remove();
   });
 });

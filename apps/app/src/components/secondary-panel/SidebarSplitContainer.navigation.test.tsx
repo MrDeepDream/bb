@@ -36,7 +36,7 @@ vi.mock("@/hooks/usePluginCommandBindings", () => ({
       shortcut: { key, mod: true, meta: false, control, alt: false, shift },
       when: { all: ["mainSurface"], none: ["modalOpen"] },
     }));
-    return { keybindings, defaults: keybindings };
+    return { keybindings, defaults: keybindings, editorKeybindings: [] };
   },
 }));
 

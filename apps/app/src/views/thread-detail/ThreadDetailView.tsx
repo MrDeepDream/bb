@@ -152,7 +152,7 @@ import {
 } from "@/components/secondary-panel/AttachmentOpenerContext";
 import { SelectionAddToChatContext } from "@/components/thread/SelectionAddToChatContext";
 import { usePluginSlotKind } from "@/lib/plugin-slots";
-import { getFileExtension } from "@/lib/plugin-slot-resolvers";
+import { getFileOpenersForPath } from "@/lib/plugin-slot-resolvers";
 import { Icon } from "@bb/shared-ui/icon";
 import { getBbDesktopInfo, isDesktopBrowserAvailable } from "@/lib/bb-desktop";
 import { UrlOpenRoutingProvider } from "@/lib/url-open-routing";
@@ -423,6 +423,7 @@ function ThreadDetailViewInternal(
     clearActiveFileTabs,
     activateTab,
     closeTab,
+    openFileTabView,
     openTab,
     openPluginDetail,
     openPluginPanel,
@@ -1229,13 +1230,7 @@ function ThreadDetailViewInternal(
   });
   const getLocalFileContextMenuItems = useCallback(
     (link: ThreadTimelineLocalFileLink) => {
-      const extension = getFileExtension(link.path);
-      const matching =
-        extension === null
-          ? []
-          : pluginFileOpeners.filter((opener) =>
-              opener.extensions.includes(extension),
-            );
+      const matching = getFileOpenersForPath(pluginFileOpeners, link.path);
       const lineNumber = getFilePreviewLineRangeStart({
         lineRange: link.lineRange,
       });
@@ -1792,6 +1787,7 @@ function ThreadDetailViewInternal(
                 onOpenFileInEditor: handleOpenFileInEditor,
                 onTabReorder: reorderTab,
                 onOpenNewTab: handleOpenNewTab,
+                onOpenFileTabView: openFileTabView,
                 onOpenFilePreview: handleOpenFilePreview,
                 onSelectionAddToChat: handleSelectionAddToChat,
                 onPanelFocus: touchFixedPanelTabsState,

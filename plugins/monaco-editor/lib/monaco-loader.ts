@@ -1,9 +1,23 @@
 import type * as MonacoNs from "monaco-editor";
+import { workspaceAnchor } from "./model-store.js";
 
 let bootPromise: Promise<typeof MonacoNs> | null = null;
 
 export function loadMonaco(baseUrl: string): Promise<typeof MonacoNs> {
-  bootPromise ??= boot(baseUrl);
+  const adopted = workspaceAnchor().monaco;
+  if (adopted !== null) return Promise.resolve(adopted);
+  if (bootPromise === null) {
+    const booting = boot(baseUrl);
+    bootPromise = booting;
+    booting.then(
+      (monaco) => {
+        workspaceAnchor().monaco = monaco;
+      },
+      () => {
+        if (bootPromise === booting) bootPromise = null;
+      },
+    );
+  }
   return bootPromise;
 }
 
@@ -69,7 +83,10 @@ function injectStylesheet(href: string): Promise<void> {
     link.rel = "stylesheet";
     link.href = href;
     link.onload = () => resolve();
-    link.onerror = () => reject(new Error(`Failed to load ${href}`));
+    link.onerror = () => {
+      link.remove();
+      reject(new Error(`Failed to load ${href}`));
+    };
     document.head.appendChild(link);
   });
 }

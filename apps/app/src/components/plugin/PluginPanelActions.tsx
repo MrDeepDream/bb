@@ -36,6 +36,7 @@ import {
 import { createRetiredOpenPanel } from "@/lib/plugin-panel-controller";
 import type { ResolvedAppNavigationHostCapabilities } from "@/lib/app-navigation-host";
 import { useBindPluginActionContext } from "@/lib/plugin-action-context-provider";
+import { getFilePreviewLineRangeColumn } from "@/lib/live-file-navigation";
 export interface OpenPluginPanelArgs {
   pluginId: string;
   actionId: string;
@@ -448,6 +449,7 @@ function FileOpenerTabContent({
     const range = owner?.tab.lineRange;
     return range == null ? null : { ...range };
   }, [owner]);
+  const column = getFilePreviewLineRangeColumn(owner?.tab.lineRange);
   if (file === null || owner === undefined || original === undefined) {
     return <UnavailableFileOpenerTab />;
   }
@@ -466,6 +468,8 @@ function FileOpenerTabContent({
             path={file.path}
             source={file.source}
             experimental_lineRange={lineRange}
+            experimental_column={column}
+            experimental_tabId={tab.id}
             Original={BoundOriginal}
           />
         </div>

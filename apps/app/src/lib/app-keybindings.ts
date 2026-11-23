@@ -1,5 +1,15 @@
-import type { AppCommandContext, AppKeybinding, AppShortcut } from "@bb/domain";
-import { isMacKeyboardPlatform } from "@bb/domain";
+import type {
+  AppClientKeybinding,
+  AppCommandContext,
+  AppKeybindingOverrides,
+  AppShortcut,
+} from "@bb/domain";
+import {
+  isMacKeyboardPlatform,
+  keyboardPlatform,
+  pluginCommandId,
+} from "@bb/domain";
+import { shortcutsConflict } from "@/lib/plugin-command-keybindings";
 
 export interface AppShortcutPresentation {
   ariaKeyshortcuts: string;
@@ -26,13 +36,80 @@ export function isEditableKeyboardTarget(target: EventTarget | null): boolean {
   );
 }
 
+export function isEditorKeyboardTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(".monaco-editor") !== null;
+}
+
 export function matchesAppCommandContext(
-  binding: AppKeybinding,
+  binding: Pick<AppClientKeybinding, "when">,
   context: AppCommandContext,
 ): boolean {
   return (
     binding.when.all.every((key) => context[key]) &&
     binding.when.none.every((key) => !context[key])
+  );
+}
+
+function editorQuickOpenBinding(key: string): AppClientKeybinding {
+  return {
+    command: "file.quickOpen",
+    desktopOnly: false,
+    shortcut: {
+      key,
+      mod: true,
+      meta: false,
+      control: false,
+      alt: false,
+      shift: key === "n",
+    },
+    when: {
+      all: ["mainSurface", "editorFocus"],
+      none: ["modalOpen", "macPlatform"],
+    },
+  };
+}
+
+const EDITOR_APP_KEYBINDINGS: readonly AppClientKeybinding[] = [
+  editorQuickOpenBinding("n"),
+  editorQuickOpenBinding("e"),
+  {
+    command: pluginCommandId("monaco-editor", "find-in-files"),
+    desktopOnly: false,
+    shortcut: {
+      key: "f",
+      mod: true,
+      meta: false,
+      control: false,
+      alt: false,
+      shift: true,
+    },
+    when: { all: ["mainSurface", "editorFocus"], none: ["modalOpen"] },
+  },
+];
+
+export function resolveEditorAppKeybindings(
+  overrides: AppKeybindingOverrides,
+  platform: string,
+  pluginKeybindings: readonly Pick<AppClientKeybinding, "shortcut">[],
+): readonly AppClientKeybinding[] {
+  const current = keyboardPlatform(platform);
+  const applicable = overrides.filter(
+    (override) =>
+      override.platform === undefined || override.platform === current,
+  );
+  const overridden = new Set(applicable.map((override) => override.command));
+  const claimed = [
+    ...applicable.flatMap(({ shortcut }) =>
+      shortcut === null ? [] : [shortcut],
+    ),
+    ...pluginKeybindings.map(({ shortcut }) => shortcut),
+  ];
+  return EDITOR_APP_KEYBINDINGS.filter(
+    (binding) =>
+      !overridden.has(binding.command) &&
+      !claimed.some((shortcut) =>
+        shortcutsConflict(binding.shortcut, shortcut, platform),
+      ),
   );
 }
 

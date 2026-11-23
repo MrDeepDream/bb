@@ -22,9 +22,13 @@ export interface SecondaryPanelRenderableTab {
   label: string;
   isHidden?: boolean;
   isPinned?: boolean;
+  isPreview?: boolean;
   leadingVisual: ReactNode;
   onClose: () => void;
+  onKeepOpen?: () => void;
   onSelect: () => void;
+  onSplit?: (side: "right" | "bottom") => void;
+  onTogglePin?: () => void;
   renderContent: (pane: SecondaryPanelPaneRenderContext) => ReactNode;
   statusLabel: string | null;
   tab: SecondaryFileFixedPanelTab;

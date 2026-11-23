@@ -138,6 +138,8 @@ class FakeDesktopWindowWebContents implements DesktopWindowWebContents {
   }
 }
 
+type FakeWindowListener = (event: { preventDefault(): void }) => void;
+
 class FakeDesktopWindow implements DesktopBrowserWindow {
   public readonly id: number;
   public readonly loadedUrls: string[] = [];
@@ -157,8 +159,8 @@ class FakeDesktopWindow implements DesktopBrowserWindow {
   private destroyed = false;
   public bounds: WindowBounds;
   public normalBounds: WindowBounds | null = null;
-  private readonly listeners = new Map<string, Array<() => void>>();
-  private readonly closedListeners: Array<() => void> = [];
+  private readonly listeners = new Map<string, FakeWindowListener[]>();
+  private readonly closedListeners: FakeWindowListener[] = [];
   private readyToShowListener: (() => void) | null = null;
 
   constructor(args: FakeDesktopWindowArgs) {
@@ -182,14 +184,17 @@ class FakeDesktopWindow implements DesktopBrowserWindow {
   private static nextWebContentsId = 1;
 
   emit(event: string): void {
-    for (const listener of this.listeners.get(event) ?? []) listener();
+    const windowEvent = { preventDefault() {} };
+    for (const listener of this.listeners.get(event) ?? []) {
+      listener(windowEvent);
+    }
   }
 
   emitClosed(): void {
     this.emit("close");
     this.destroyed = true;
     for (const listener of this.closedListeners) {
-      listener();
+      listener({ preventDefault() {} });
     }
   }
 
@@ -243,7 +248,7 @@ class FakeDesktopWindow implements DesktopBrowserWindow {
       | "resize"
       | "maximize"
       | "unmaximize",
-    listener: () => void,
+    listener: FakeWindowListener,
   ): void {
     const listeners = this.listeners.get(eventName) ?? [];
     listeners.push(listener);
@@ -320,6 +325,7 @@ async function createFactoryHarness(
     shouldUseDarkColors() {
       return true;
     },
+    blockWindowClose: () => false,
     isQuitting() {
       return false;
     },
@@ -477,6 +483,19 @@ describe("desktop window factory", () => {
     expect(
       (await readPersistedWindowStateFile({ userDataPath })).windows,
     ).toHaveLength(1);
+  });
+
+  it("keeps saving a window whose close was blocked", async () => {
+    const { factory, createdWindows, userDataPath } =
+      await createFactoryHarness({ blockWindowClose: () => true });
+    await factory.createWindow({ initialUrl: null, stateKey: null });
+    const window = createdWindows[0]!;
+    window.emit("close");
+    window.bounds = { x: 210, y: 130, width: 1010, height: 710 };
+    await factory.persistOpenWindows();
+    const saved = await readPersistedWindowStateFile({ userDataPath });
+    expect(saved.windows).toHaveLength(1);
+    expect(saved.windows[0]?.bounds).toEqual(window.bounds);
   });
 
   it("saves move and resize events without quitting, including simultaneous windows", async () => {

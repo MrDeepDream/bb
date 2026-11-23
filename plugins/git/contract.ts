@@ -271,6 +271,30 @@ export const gitPatchResultSchema = z.discriminatedUnion("outcome", [
 ]);
 export type GitPatchResult = z.infer<typeof gitPatchResultSchema>;
 
+export const gitPatchTargetSchema = z.union([
+  z.object({ environmentId: z.string().min(1) }).strict(),
+  z
+    .object({ projectId: z.string().min(1), hostId: z.string().min(1) })
+    .strict(),
+]);
+export type GitPatchTarget = z.infer<typeof gitPatchTargetSchema>;
+
+export const gitPatchesByPathResultSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      outcome: z.literal("available"),
+      rootPath: z.string().min(1),
+      patches: z.array(diffPatchEntrySchema),
+      deferred: z.array(z.string().min(1)),
+    })
+    .strict(),
+  notApplicableSchema,
+  unavailableSchema,
+]);
+export type GitPatchesByPathResult = z.infer<
+  typeof gitPatchesByPathResultSchema
+>;
+
 export const gitPatchKeySchema = z
   .object({
     environmentId: z.string().min(1),

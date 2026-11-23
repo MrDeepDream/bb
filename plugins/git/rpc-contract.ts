@@ -13,6 +13,8 @@ import {
   gitFilesResultSchema,
   gitFilesTag,
   gitPatchResultSchema,
+  gitPatchTargetSchema,
+  gitPatchesByPathResultSchema,
   gitRefsTag,
   gitStatusResultSchema,
   gitStatusRowSchema,
@@ -37,6 +39,17 @@ const gitDiffQuerySchema = workspaceDiffTargetSchema.refine(
 const environmentInputSchema = z
   .object({ environmentId: z.string().min(1) })
   .strict();
+
+const gitRelativePathSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .refine(
+    (path) =>
+      !/^(?:[\\/:]|[A-Za-z]:[\\/])/u.test(path) &&
+      !path.split(/[\\/]/u).includes(".."),
+    { message: "Paths must be relative and stay inside the target's root" },
+  );
 
 export const gitRpcContract = defineRpcContract({
   status: {
@@ -104,6 +117,17 @@ export const gitRpcContract = defineRpcContract({
       .strict(),
     output: z.record(z.string(), gitPatchResultSchema),
     keyTags: () => [],
+  },
+  patchesByPath: {
+    experimental_description:
+      "Uncommitted patches against HEAD for paths relative to an environment's workspace or a project's checkout on one host. The result names the root it read. Each read is fresh. An unborn HEAD returns unavailable, and paths the host could not return stay in deferred.",
+    input: z
+      .object({
+        target: gitPatchTargetSchema,
+        paths: z.array(gitRelativePathSchema).min(1).max(GIT_PATCHES_MAX_KEYS),
+      })
+      .strict(),
+    output: gitPatchesByPathResultSchema,
   },
   fileSide: {
     experimental_description:

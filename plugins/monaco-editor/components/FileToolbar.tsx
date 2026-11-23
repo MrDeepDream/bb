@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { experimental_copyToClipboard } from "@get-bb/plugin-sdk/app";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+} from "@/components/ui/breadcrumb";
 import { cn } from "@/lib/utils";
+import { fileExtensionForPath } from "../lib/languages.js";
 
 export type SaveIndicator = "clean" | "dirty" | "saving" | "error";
 
 export interface FileToolbarProps {
   path: string;
+  breadcrumbPath: string;
+  breadcrumbRef: React.Ref<HTMLElement>;
+  onRevealInFiles: () => void;
   indicator: SaveIndicator;
   saveDisabled: boolean;
   saveConflict: boolean;
@@ -19,6 +28,9 @@ export interface FileToolbarProps {
 
 export function FileToolbar({
   path,
+  breadcrumbPath,
+  breadcrumbRef,
+  onRevealInFiles,
   indicator,
   saveDisabled,
   saveConflict,
@@ -35,7 +47,12 @@ export function FileToolbar({
           path={path}
           className="size-3.5 shrink-0 text-subtle-foreground"
         />
-        <CopyablePath path={path} />
+        <PathBreadcrumbs
+          copyPath={path}
+          displayPath={breadcrumbPath}
+          navRef={breadcrumbRef}
+          onRevealInFiles={onRevealInFiles}
+        />
         <ToolbarButton
           label={isRefreshing ? "Reloading file" : "Reload from disk"}
           onClick={onRefresh}
@@ -95,7 +112,59 @@ function SaveDot({ indicator }: { indicator: SaveIndicator }) {
   );
 }
 
-function CopyablePath({ path }: { path: string }) {
+function PathBreadcrumbs({
+  copyPath,
+  displayPath,
+  navRef,
+  onRevealInFiles,
+}: {
+  copyPath: string;
+  displayPath: string;
+  navRef: React.Ref<HTMLElement>;
+  onRevealInFiles: () => void;
+}) {
+  const segments = displayPath.split(/[\\/]/u).filter(Boolean);
+  const name = segments.at(-1) ?? displayPath;
+  const directories = segments.slice(0, -1);
+  return (
+    <Breadcrumb
+      ref={navRef}
+      aria-label="File path"
+      className="min-w-0"
+      title={displayPath}
+    >
+      <BreadcrumbList className="flex-nowrap gap-0.5 sm:gap-0.5">
+        {directories.map((directory, index) => (
+          <BreadcrumbItem
+            key={`${index}:${directory}`}
+            className="min-w-0 gap-0.5 [flex-shrink:9999] focus-within:shrink-0"
+          >
+            <button
+              type="button"
+              onClick={onRevealInFiles}
+              aria-label={`Show ${directory} in files`}
+              className={cn(
+                "min-w-0 cursor-pointer truncate rounded-sm font-mono text-xs",
+                "text-muted-foreground hover:text-foreground",
+                "focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+              )}
+            >
+              {directory}
+            </button>
+            <span aria-hidden className="shrink-0 text-subtle-foreground">
+              /
+            </span>
+          </BreadcrumbItem>
+        ))}
+        <BreadcrumbItem className="min-w-0">
+          <CopyablePath path={copyPath} label={name} />
+        </BreadcrumbItem>
+      </BreadcrumbList>
+    </Breadcrumb>
+  );
+}
+
+function CopyablePath({ path, label }: { path: string; label: string }) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -124,15 +193,14 @@ function CopyablePath({ path }: { path: string }) {
       type="button"
       onClick={copy}
       title={copied ? "Copied" : "Copy file path"}
-      aria-label="Copy file path"
+      aria-label={`Copy file path of ${label}`}
       className={cn(
-        "min-w-0 cursor-pointer truncate rounded-sm text-left font-mono text-sm",
+        "block max-w-full min-w-0 cursor-pointer truncate rounded-sm text-left font-mono text-sm",
         "font-medium leading-5 text-file-accent underline-offset-2",
         "hover:underline focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
       )}
-      style={{ direction: "rtl", textAlign: "left" }}
     >
-      <bdi>{path}</bdi>
+      <bdi>{label}</bdi>
     </button>
   );
 }
@@ -278,10 +346,8 @@ const DOC_EXTENSIONS = new Set([
   "log",
 ]);
 
-function glyphKindForPath(path: string): "code" | "data" | "doc" {
-  const name = path.split("/").at(-1) ?? path;
-  const dotIndex = name.lastIndexOf(".");
-  const extension = dotIndex <= 0 ? "" : name.slice(dotIndex + 1).toLowerCase();
+export function glyphKindForPath(path: string): "code" | "data" | "doc" {
+  const extension = fileExtensionForPath(path);
   if (DATA_EXTENSIONS.has(extension)) return "data";
   if (DOC_EXTENSIONS.has(extension)) return "doc";
   return "code";

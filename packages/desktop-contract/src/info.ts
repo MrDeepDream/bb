@@ -88,6 +88,8 @@ export interface BbDesktopApi extends BbDesktopInfo {
   getInfo(): Promise<BbDesktopInfo>;
   focusWindow?(): void;
   setAttentionThreads?(threads: BbDesktopAttentionThreads): void;
+  setHasUnsavedEditors?(hasUnsavedEditors: boolean): void;
+  confirmUnsavedEditorsUnload?(): Promise<boolean>;
   getWindowState?(): Promise<BbDesktopWindowState>;
   installUpdate(): Promise<void>;
   macosTrafficLightInset?: number;

@@ -12,6 +12,8 @@ import {
   type GitFileSideResult,
   type GitFileSideQuery,
   type GitFilesResult,
+  type GitPatchesByPathResult,
+  type GitPatchTarget,
   type GitReadFreshness,
   type GitStatusResult,
   type WorkspaceDiffTarget,
@@ -26,6 +28,7 @@ import { createAsyncTtlMemo } from "@bb/async-cache";
 const READ_CACHE_TTL_MS = 3_000;
 const READ_CACHE_MAX_ENTRIES = 1_024;
 const HOST_CALL_TIMEOUT_MS = 30_000;
+const BORN_HEAD_TTL_MS = 60_000;
 
 type Environment = Awaited<
   ReturnType<BbPluginApi["sdk"]["environments"]["get"]>
@@ -173,6 +176,10 @@ export interface GitReads {
     | { outcome: "available"; patches: DiffPatchEntry[] }
     | Exclude<GitFilesResult, { outcome: "available" }>
   >;
+  patchesByPath(
+    target: GitPatchTarget,
+    paths: string[],
+  ): Promise<GitPatchesByPathResult>;
   fileSide(
     environmentId: string,
     query: GitFileSideQuery,
@@ -224,6 +231,15 @@ export function createGitReads(
   const host = createHostClient(bb);
   const statusCache = createReadMemo<GitStatusResult>();
   const filesCache = createReadMemo<GitFilesResult>();
+  const headStates = createAsyncTtlMemo<
+    string,
+    | { outcome: "available"; unborn: boolean }
+    | Extract<GitPatchesByPathResult, { outcome: "unavailable" }>
+  >({
+    ttlMs: (head) =>
+      head.outcome === "available" && !head.unborn ? BORN_HEAD_TTL_MS : 0,
+    maxEntries: READ_CACHE_MAX_ENTRIES,
+  });
 
   async function requireReady(
     environmentId: string,
@@ -232,6 +248,61 @@ export function createGitReads(
     const path = requireWorkspacePath(environment);
     if (!environment.isGitRepo) return null;
     return { environment, hostId: environment.hostId, path };
+  }
+
+  async function requireProjectCheckout(
+    projectId: string,
+    hostId: string,
+  ): Promise<{ hostId: string; path: string }> {
+    let project: Awaited<ReturnType<BbPluginApi["sdk"]["projects"]["get"]>>;
+    try {
+      project = await bb.sdk.projects.get({ projectId });
+    } catch (error) {
+      if (error instanceof experimental_BbHttpError && error.status === 404) {
+        throw new experimental_PluginRpcRefusal({
+          code: "not_found",
+          message: `Project not found: ${projectId}`,
+        });
+      }
+      throw error;
+    }
+    const checkout = project.sources.find((source) => source.hostId === hostId);
+    if (checkout === undefined) {
+      throw new experimental_PluginRpcRefusal({
+        code: "not_found",
+        message: `Project ${projectId} has no checkout on host ${hostId}`,
+      });
+    }
+    return { hostId, path: checkout.path };
+  }
+
+  async function readPatchPages(
+    checkout: { hostId: string; path: string },
+    readFreshness: GitReadFreshness,
+    target: WorkspaceDiffTarget,
+    ignoreWhitespace: boolean,
+    paths: string[],
+  ) {
+    const patches: DiffPatchEntry[] = [];
+    let pending = paths;
+    while (pending.length > 0) {
+      const result = await host.call(
+        "patches",
+        {
+          path: checkout.path,
+          freshness: readFreshness,
+          target,
+          ignoreWhitespace,
+          paths: pending,
+        },
+        checkout.hostId,
+      );
+      if (result.outcome !== "available") return result;
+      if (result.value.patches.length === 0) break;
+      patches.push(...result.value.patches);
+      pending = result.value.deferred;
+    }
+    return { outcome: "available" as const, patches, deferred: pending };
   }
 
   return {
@@ -308,27 +379,61 @@ export function createGitReads(
     async patches(environmentId, target, ignoreWhitespace, paths, cache) {
       const ready = await requireReady(environmentId);
       if (ready === null) return notApplicable("diff");
-      const readFreshness = freshness(environmentId, cache === "shared");
-      const patches: DiffPatchEntry[] = [];
-      let pending = paths;
-      while (pending.length > 0) {
-        const result = await host.call(
-          "patches",
-          {
-            path: ready.path,
-            freshness: readFreshness,
-            target,
-            ignoreWhitespace,
-            paths: pending,
+      const result = await readPatchPages(
+        ready,
+        freshness(environmentId, cache === "shared"),
+        target,
+        ignoreWhitespace,
+        paths,
+      );
+      return result.outcome === "available"
+        ? { outcome: "available", patches: result.patches }
+        : result;
+    },
+    async patchesByPath(target, paths) {
+      const checkout =
+        "environmentId" in target
+          ? await requireReady(target.environmentId)
+          : await requireProjectCheckout(target.projectId, target.hostId);
+      if (checkout === null) return notApplicable("diff");
+      const readFreshness = freshness(checkout.path, false);
+      const head = await headStates.run(
+        [checkout.hostId, checkout.path].join(KEY_SEPARATOR),
+        async () => {
+          const status = await host.call(
+            "status",
+            { path: checkout.path, freshness: readFreshness },
+            checkout.hostId,
+          );
+          return status.outcome === "available"
+            ? {
+                outcome: "available" as const,
+                unborn: status.value.checkout.kind === "unborn",
+              }
+            : status;
+        },
+      );
+      if (head.outcome !== "available") return head;
+      if (head.unborn) {
+        return {
+          outcome: "unavailable",
+          failure: {
+            code: "unknown",
+            workspacePath: checkout.path,
+            message: "This repository has no commits yet.",
           },
-          ready.hostId,
-        );
-        if (result.outcome !== "available") return result;
-        if (result.value.patches.length === 0) break;
-        patches.push(...result.value.patches);
-        pending = result.value.deferred;
+        };
       }
-      return { outcome: "available", patches };
+      const result = await readPatchPages(
+        checkout,
+        readFreshness,
+        { type: "uncommitted" },
+        false,
+        paths,
+      );
+      return result.outcome === "available"
+        ? { ...result, rootPath: checkout.path }
+        : result;
     },
     async fileSide(environmentId, query) {
       const environment = await requireGitEnvironment(bb, environmentId);

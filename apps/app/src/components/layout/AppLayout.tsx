@@ -66,6 +66,7 @@ import {
   PluginPanelHeaderActions,
   PluginPanelHeaderCenter,
 } from "@/components/plugin/PluginPanelHeader";
+import { FileOpenerCloseGuardHost } from "@/components/plugin/FileOpenerCloseGuardHost";
 import { PluginAppOverlays } from "@/components/plugin/PluginAppOverlays";
 import { ThreadRowMetadataCollectors } from "@/components/plugin/ThreadRowMetadataCollectors";
 import { ThreadActionsProvider } from "@/components/thread/ThreadActionsProvider";
@@ -906,6 +907,7 @@ function AppLayoutContent({ children }: AppLayoutProps) {
               <AppTitleBar showsTerminalToggle={!isGlobalSettingsView} />
             </SidebarStateBridge>
             <PluginAppOverlays />
+            <FileOpenerCloseGuardHost />
             <ThreadRowMetadataCollectors />
             <IframeDragGuardOverlay
               active={isSidebarResizing}

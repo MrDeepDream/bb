@@ -22,6 +22,7 @@ import { appToast } from "@/components/ui/app-toast";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useAcknowledgeAppUpdate } from "@/hooks/mutations/app-update-mutations";
 import { useAppUpdateStatus } from "@/hooks/queries/app-update-queries";
+import { whenNoDirtyFileTabs } from "@/lib/file-opener-close-guard";
 import { getMutationErrorMessage } from "@/lib/mutation-errors";
 import {
   closeAppUpdateResultDetails,
@@ -40,7 +41,7 @@ const FAILURE_TOAST_DURATION_MS = 60_000;
 const RESTART_PATIENCE_MS = 3 * 60 * 1000;
 
 function reloadPage(): void {
-  window.location.reload();
+  whenNoDirtyFileTabs(() => window.location.reload());
 }
 
 export function AppUpdateHost({

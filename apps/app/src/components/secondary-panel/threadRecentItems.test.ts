@@ -2,6 +2,24 @@ import { describe, expect, it } from "vitest";
 import { recordRecentItem, type ThreadRecentItem } from "./threadRecentItems";
 
 describe("recordRecentItem", () => {
+  it("dedupes host files per host and keeps other hosts separate", () => {
+    const items: ThreadRecentItem[] = [
+      { source: "host", hostId: "host_a", path: "/repo/a.ts", openedAt: 10 },
+      { source: "host", hostId: "host_b", path: "/repo/a.ts", openedAt: 20 },
+    ];
+    const next = recordRecentItem({
+      items,
+      source: "host",
+      hostId: "host_a",
+      path: "/repo/a.ts",
+      openedAt: 30,
+    });
+    expect(next).toEqual([
+      { source: "host", hostId: "host_a", path: "/repo/a.ts", openedAt: 30 },
+      { source: "host", hostId: "host_b", path: "/repo/a.ts", openedAt: 20 },
+    ]);
+  });
+
   it("prepends a newly opened item so the list reads newest-first", () => {
     const items: ThreadRecentItem[] = [
       { source: "workspace", path: "src/a.ts", openedAt: 10 },

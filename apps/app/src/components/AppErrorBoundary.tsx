@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { requestPageUnload } from "@/lib/file-opener-close-guard";
 
 interface AppErrorBoundaryProps {
   children: ReactNode;
@@ -47,7 +48,7 @@ export class AppErrorBoundary extends Component<
           <button
             type="button"
             className="mt-4 w-full cursor-pointer rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
-            onClick={() => window.location.reload()}
+            onClick={() => requestPageUnload(() => window.location.reload())}
           >
             Reload bb
           </button>

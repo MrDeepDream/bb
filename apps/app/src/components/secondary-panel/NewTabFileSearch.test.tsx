@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POINTER_COARSE_QUERY } from "@bb/shared-ui/hooks/use-pointer-coarse";
 import { NewTabFileSearch } from "./NewTabFileSearch";
+import type { ThreadRecentItem } from "./threadRecentItems";
+
+const recentItems = vi.hoisted(() => ({
+  current: [] as readonly ThreadRecentItem[],
+}));
 
 vi.mock("@/hooks/useFileSearchSuggestions", () => ({
   useFileSearchSuggestions: () => ({
@@ -19,13 +24,14 @@ vi.mock("./threadRecentItems", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./threadRecentItems")>();
   return {
     ...actual,
-    useThreadRecentItems: () => [],
+    useThreadRecentItems: () => recentItems.current,
   };
 });
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  recentItems.current = [];
 });
 
 function mockPointerCoarse(matches: boolean) {
@@ -106,5 +112,22 @@ describe("NewTabFileSearch", () => {
     act(() => nextFrame?.(0));
 
     expect(focusSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    {
+      path: "C:\\Users\\dev\\project\\src\\f04.ts",
+      directory: "C:\\Users\\dev\\project\\src",
+    },
+    { path: "/home/dev/project/f04.ts", directory: "/home/dev/project" },
+  ])("shows the recent host file $path by name", ({ path, directory }) => {
+    mockPointerCoarse(false);
+    recentItems.current = [{ source: "host", hostId: null, path, openedAt: 1 }];
+
+    renderFileSearch({ autoFocus: false });
+
+    const row = screen.getByTitle(path);
+    expect(within(row).getByText("f04.ts")).toBeTruthy();
+    expect(row.textContent).toContain(directory);
   });
 });

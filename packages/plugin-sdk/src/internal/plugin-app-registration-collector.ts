@@ -1228,11 +1228,26 @@ export function collectPluginAppRegistrations(
           }
           return extension;
         });
+        const closeGuard = registration.experimental_closeGuard;
+        if (
+          closeGuard !== undefined &&
+          (typeof closeGuard?.subscribe !== "function" ||
+            typeof closeGuard.dirty !== "function" ||
+            typeof closeGuard.save !== "function" ||
+            typeof closeGuard.discard !== "function")
+        ) {
+          throw new Error(
+            `${kind}: "experimental_closeGuard" must define subscribe, dirty, save, and discard`,
+          );
+        }
         collected.fileOpeners.push({
           id,
           title: requireNonEmptyString(kind, "title", registration.title),
           extensions,
           component: requireComponent(kind, registration.component),
+          ...(closeGuard !== undefined
+            ? { experimental_closeGuard: closeGuard }
+            : {}),
         });
       },
       experimental_sourceCodeRenderer(registration) {
