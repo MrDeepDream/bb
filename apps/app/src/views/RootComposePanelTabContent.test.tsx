@@ -116,6 +116,7 @@ function renderHostFilePreview({
       threadId: null,
     }),
     terminalTarget: null,
+    usesBottomRegion: false,
   };
   render(
     <AppNavigationHostProvider capabilities={{ openFileExternally }}>
